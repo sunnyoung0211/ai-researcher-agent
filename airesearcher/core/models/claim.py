@@ -96,3 +96,14 @@ class CompileReport(BaseModel):
     pages: int | None = None
     log_path: str
     seconds: float
+
+
+class EvidenceTrace(BaseModel):
+    """一条论断的完整追溯链（详细设计 1 第 9.4 节）。Brief 类型本期先用 dict，字段见 services/evidence.trace()。"""
+
+    claim: Claim
+    figures: list[dict] = []
+    aggregates: list[dict] = []  # 含该论断用到的数值和重算结果
+    runs: list[dict] = []  # 每个含 commit、config 哈希、环境摘要
+    papers: list[dict] = []  # 引用型论断
+    check: ClaimCheck | None = None
