@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.1  
+**文档版本：** v0.2（2026-10-08：按主干骨架实现同步，改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -61,7 +61,7 @@ airesearcher/
 │   ├── questions.py       # 待回答问题（3.7）
 │   ├── budget.py          # 预算记账
 │   ├── permissions.py     # 权限守卫
-│   ├── index.py           # SQLite 索引与重建
+│   ├── index.py           # SQLite 索引与重建（v0.2：本期暂未实现，见 3.9）
 │   └── locks.py           # 项目级文件锁
 ├── engine/
 │   ├── states.py          # 状态与转换表
@@ -83,11 +83,13 @@ airesearcher/
 ├── stages/
 │   ├── __init__.py        # 状态 → 阶段 的注册表（见 5.3）
 │   └── example/           # 示例阶段
+├── runtime/               # 执行器与运行包装器（【实验】负责；v0.2 主干先提供了最小可用版本）
 ├── services/              # 跨阶段的只读服务（只读文件、不调模型）
 │   ├── literature.py      # 文献：verify_citation() 等
 │   ├── runs.py            # 实验：读取运行目录与汇总结果
 │   └── evidence.py        # 论文：evidence.check()、证据链组装
-└── testing/               # 假实现：FakeLLM、FakeExecutor、FakeLiterature、临时工作区
+├── stages/fakes/          # v0.2：四个阶段的假实现（idea/plan/experiment/writing），格式与真实实现相同
+└── testing/               # 假实现：FakeLLM（v0.2 已有）；FakeExecutor、FakeLiterature、temp_project 待补
 ```
 
 依赖规则：`core` 不导入 `engine`、`stages`、`server`；`stages/*` 之间互不导入，需要别的阶段的数据时通过 `services/*` 读取；`services/*` 只依赖 `core`；`cli` 只通过 HTTP 调用 `server`（`air dev ...` 调试命令除外，见 8.2）。CI 用 `import-linter` 检查这几条。
@@ -209,7 +211,8 @@ class Event(BaseModel):
 | `project.created` `state.changed` `checkpoint.saved` `engine.error` | 引擎 |
 | `artifact.created` `artifact.human_edited` | 档案 |
 | `approval.requested` `approval.decided` `approval.superseded` | 审批 |
-| `question.asked` `question.answered` | 问答（3.7） |
+| `question.asked` `question.answered` `question.withdrawn` | 问答（3.7） |
+| `project.config_changed` `run.cancel_requested` | 主干（v0.2 新增：修改 project.yaml、用户请求取消运行） |
 | `budget.warning` `budget.exhausted` | 预算 |
 | `permission.granted` `permission.denied` | 权限 |
 | `llm.call`（只记摘要：角色、模型、token、费用、call_id） | 网关 |
@@ -281,6 +284,8 @@ class Answer(BaseModel):
 
 ### 3.9 SQLite 索引（`.index/index.sqlite`）
 
+> **v0.2 实现说明：** 本期暂未实现索引。事件、审批、运行等查询都直接顺序扫描文件（单个项目几千条记录以内足够快）。接口（`events.query()` 等）不变，以后加索引不影响调用方。
+
 索引只为查询提速，**所有内容都能从文件重建**。
 
 | 表 | 主要列 | 来源文件 |
@@ -337,6 +342,7 @@ paper: {max_review_rounds: 2, max_compile_fixes: 2, review_build: false, figure_
 | 顶层字段 | 负责人 | 说明见 |
 |---|---|---|
 | `project_id` `title` `goal` `constraints` `task` `evidence_check` `models` `budget` `permissions` `llm_cache` `template` | 主干 | 本节 |
+| `dev.stage_impl` `dev.smoke_seconds` `dev.smoke_fail` `dev.poll_seconds` `dev.compile` | 主干（开发用） | 附录 B：选择每个阶段用真实实现还是假实现，以及假实现的演示参数 |
 | `reading_mode` `limits.search_papers` `limits.read_papers` `limits.reader_concurrency` `literature.*` | 文献 | 详细设计 2 第 11 节 |
 | `limits.max_rounds` `limits.max_repair_retries` `experiment.*` | 实验 | 详细设计 3 第 12 节 |
 | `paper.*` | 论文 | 详细设计 4 第 11 节 |
@@ -446,6 +452,7 @@ class StageContext:
     budget: Budget; permissions: Permissions; workspace: Workspace
     llm: LLMGateway; skills: SkillLoader
     executor: Executor | None     # 引擎为每个项目创建一个 LocalExecutor(project)，注入实验阶段（计划阶段也可用于执行前检查）
+    questions: Questions          # v0.2 新增：只读查看问题记录（提问仍然通过返回 Stop(question=...)）
     scratch: dict                 # 阶段私有进度，引擎在每次 step 后随检查点持久化
     approved: dict[ApprovalKind, VersionRef]   # 每类最近一次获批的版本
     feedback: list[Approval]      # 最近一次被退回/拒绝的审批（含意见），阶段据此修改
@@ -453,6 +460,8 @@ class StageContext:
     stale: list[str]              # 因上游变化需要重新评估的 artifact_id
     answer: Answer | None         # 用户对本阶段上一个问题的回答（3.7）；只在回答后的下一次 step 中出现一次
     log: Callable[[str], None]    # 写调试日志到 .state/stage.log
+
+    def progress(self, label, done=None, total=None, unit=""): ...   # v0.2 新增：写 scratch["_label"]/["_progress"] 的简便写法
 ```
 
 ```python
@@ -585,9 +594,14 @@ def run_project(project_id):
   "entry": null,
   "scratch": {"experiment": {"round": 1, "submitted": ["r-20261015-1420-a1b2"]}},
   "consecutive_errors": 0,
-  "last_event_seq": 518
+  "last_event_seq": 518,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
 }
 ```
+
+v0.2 增加的三个字段：`answer`（已回答、待交给阶段的 `Answer`，阶段下一次 `step` 后清空）、`reason`（进入 Paused / Failed / BudgetExhausted 的原因，状态页显示）、`rejected_approval`（被拒绝、等待用户回答 redo/end 的审批）。
 
 写入方式：先写 `checkpoint.json.tmp` 再原子 `rename`；同时复制到 `checkpoints/ck-000231.json`，保留最近 20 个。
 
@@ -597,7 +611,7 @@ def run_project(project_id):
 
 1. 若 `.index/` 缺失或 schema 版本不符 → 重建索引；
 2. 读取 `checkpoint.json`；
-3. 从 `runs/*/status.json` 找出状态为 `queued / running / unknown` 的运行，逐个调用 `executor.reconcile(run_id)`（【实验】实现），根据返回值写 `run.reconciled` 事件；
+3. 从 `runs/*/status.json` 找出状态为 `queued / running / unknown` 的运行，以及**已结束但还没收集**的运行（后台停机期间结束的，详细设计 3 第 6.5 节“终态未 collect 则补收”），逐个调用 `executor.reconcile(run_id)`（【实验】实现），根据返回值写 `run.reconciled` 事件；
 4. 对比审批、问题文件与检查点：若检查点中的 `pending_approval` / `pending_question` 在文件中已被决定或回答（例如后台在写入后、检查点更新前崩溃），以文件为准补做状态转换；
 5. 项目原处于活动状态 → 重新启动引擎线程，从检查点继续。**不会**重新提交已有运行（运行是否已提交由实验阶段的 `scratch` 和 `runs/` 目录共同决定）。
 
@@ -779,7 +793,7 @@ sk.ref                     # "scientific-plotting@1.0.0"，阶段写进产物元
 |---|---|
 | `air serve` | 启动后台 |
 | `air new --idea "..." --task tasks/text_cls_lowres [--no-evidence-check]` | 创建项目并开始 |
-| `air list` / `air status <pid>` | 项目列表 / 当前状态、阶段、预算、待办 |
+| `air list` / `air status <pid> [--wait]` | 项目列表 / 当前状态、阶段、预算、待办和下一步命令；`--wait` 一直等到需要用户处理（v0.2） |
 | `air approvals <pid>` / `air show <aid>` | 待审列表 / 查看待审内容（终端里显示 Markdown） |
 | `air question <pid>` / `air answer <pid> <option_id> [-m 文字]` | 查看 / 回答当前待回答的问题 |
 | `air approve <aid> [-m 意见]` / `air revise <aid> -m 意见` / `air reject <aid> -m 意见` | 提交审批决定 |
@@ -787,8 +801,10 @@ sk.ref                     # "scientific-plotting@1.0.0"，阶段写进产物元
 | `air runs <pid>` / `air logs <pid> <run_id> [-f]` / `air cancel-run <pid> <run_id>` | 运行查看与控制 |
 | `air export <pid> [--what paper|archive]` | 导出 zip |
 | `air project rollback <pid> --to <ck>` | 回滚检查点 |
-| **`air dev run-stage <stage> --workspace <path> [--steps N] [--state S]`** | **不启动后台，直接在某个工作区上执行阶段的 `step()`，打印每步的 StepResult。阶段开发者最常用** |
-| `air dev new-workspace <path> [--from fixtures/sample_project]` | 复制一个可随便改的测试工作区 |
+| **`air dev run-stage <stage> --workspace <path> [--steps N] [--state S] [--auto-approve] [--fake-llm]`** | **不启动后台，直接在某个工作区上执行阶段的 `step()`，打印每步的 StepResult。阶段开发者最常用** |
+| `air dev new-workspace <path> [--from fixtures/sample_project] [--idea ... --task ... --impl idea=real]` | 复制一个可随便改的测试工作区；不给 `--from` 时新建一个（v0.2） |
+
+v0.2 的几点约定：除 `air serve` 外，`<pid>` 都可以省略（省略时用最近创建的项目）；审批编号只在项目内唯一，`air show/approve/revise/reject` 可用 `-p <pid>` 指定项目，不给时自动找有该待审批的项目；`air new` 另有开发用参数 `--impl`、`--smoke-seconds`、`--smoke-fail <task_key>:<fail_mode>`。
 | `air dev reindex <path>`、`air skills verify <name>` | 重建索引；验证 skill |
 
 除 `air dev *` 和 `air skills *` 外，CLI 都通过 HTTP 调用后台，保证与 GUI 行为一致（FR-72）。
@@ -1121,3 +1137,26 @@ ctx.scratch["idea"]["xxx"] = ...                                                
 air dev new-workspace /tmp/ws --from fixtures/sample_project
 air dev run-stage idea --workspace /tmp/ws --steps 3
 ```
+
+---
+
+## 附录 B：v0.2 实现说明（主干骨架 PR）
+
+第一版代码与本文的差异与补充，按章节列出。
+
+| 章节 | 内容 |
+|---|---|
+| 2 | 新增 `stages/fakes/`（四个阶段的假实现）、`core/fsutil.py`（原子写、哈希）、`core/errors.py`（错误码）、`core/models/{artifact,question,frontmatter}.py`、`server/manager.py`、`cli/labels.py`。`runtime/`（执行器、包装器）按详细设计 3 的位置放置，主干先写了最小版本，【实验】接手补全 |
+| 3.9 | SQLite 索引暂未实现，查询直接扫描文件 |
+| 3.10 | 新增 `dev` 配置（开发用）：`dev.stage_impl` 选择阶段实现（`fake` / `real` / `example` / 模块路径），环境变量 `AIR_STAGE_IMPL`（如 `idea=real,plan=fake`）优先；默认全部 `fake`。真实实现约定放在 `airesearcher/stages/<name>/stage.py` 并提供 `create_stage()` |
+| 3.5 | 新增事件类型 `question.withdrawn`、`project.config_changed`、`run.cancel_requested` |
+| 5.1 | `StageContext` 增加 `questions` 字段和 `progress()` 方法 |
+| 5.2 | 人工修改待审产物：引擎在等待状态检测到后把旧审批标为 `superseded`，转回对应 Drafting 状态，阶段重新提交最新版本。阶段实现找不到（如选了 `real` 但模块不存在）时转 `Failed` 并写明原因，修好后可 `resume` |
+| 5.5 | 检查点增加 `answer`、`reason`、`rejected_approval` 三个字段 |
+| 5.6 | 启动核对也会补收“后台停机期间已结束、但还没收集”的运行 |
+| 6.5 | `tool_loop()` 只有接口（调用时抛 `NotImplementedError`），第 2 周实现 |
+| 7 | skill 加载器为最小版本：`load()`、`instructions`、`path()`、`validate()`、`requires` 检查；`registry.yaml` 与 `air skills verify` 待做 |
+| 8.2 | 见上文 v0.2 约定；`air project rollback`、`air export`、`air cancel-run`、`air dev reindex` 尚未实现 |
+| 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`；SSE 为每秒轮询的简化版，只推 `state` 和 `event`（审批、问题、运行的变化都以 `event` 形式出现）；`/templates`、`/export`、`/runs/{id}/label`、`/runs/{id}/logs/stream` 尚未实现 |
+| 10.2 | 样例项目 `fixtures/sample_project/` 尚未制作；目前用假实现跑一遍流程生成的项目目录代替 |
+| 12 | 批量运行工具与 auto-approve 策略：引擎已有 `auto_approve_pending()`，`eval/batch.py` 待做 |
