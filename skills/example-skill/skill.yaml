@@ -1,0 +1,8 @@
+name: example-skill
+version: 0.1.0
+description: 演示 skill 包的结构：说明文件 + 检查函数（给组员照着写）
+owner: 主干
+inputs: {text: "str"}
+outputs: {summary: "Markdown"}
+validators: [check_not_empty, check_has_heading]
+requires: [pyyaml>=6]

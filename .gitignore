@@ -26,3 +26,9 @@ dist/
 # Editors
 .vscode/
 .idea/
+
+# Python build / test
+*.egg-info/
+build/
+.pytest_cache/
+.ruff_cache/

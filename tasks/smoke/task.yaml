@@ -1,0 +1,23 @@
+# 冒烟任务（详细设计 3 第 3.4 节）：只用标准库，按配置睡几秒后上报一个指标。
+# 主干的恢复测试、所有人的单元测试、以及“假实现”跑通全流程都用它。
+name: smoke
+domain: generic
+description: 冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score
+template_dir: tasks/smoke/template          # 计划获批后复制到项目 src/
+entrypoint: ["{python}", "run.py", "--config", "{config}", "--out", "{out_dir}"]
+trial_args: ["--trial"]
+config_schema: null
+metrics:
+  - {name: score,       direction: higher, required: true}
+  - {name: run_seconds, direction: lower,  required: false}
+splits:
+  test: {role: final}
+data: []
+models: []
+methods_available: [baseline, main, ablation]
+semantic_keys: [method]
+repair_tunable: [seconds]
+protected_files: [air_report.py]
+sanity:
+  score: {max_expected: 0.99}
+resources: {est_minutes_per_run: 0.05, gpu: none}

@@ -1,0 +1,10 @@
+# 模型分层与路由（详细设计 1 第 6.1 节）。项目可在 project.yaml 的 models 中覆盖。
+# 模型名用 LiteLLM 的 provider/model 格式，换供应商只改这里。具体型号第 1 周用小样本比较后更新。
+tiers:
+  fast:   {model: anthropic/claude-haiku-5-5,  max_tokens: 4096, temperature: 0.2}
+  strong: {model: anthropic/claude-sonnet-5-5, max_tokens: 8192, temperature: 0.2}
+roles:                       # 可选：按角色覆盖分层
+  lit.coordinator: strong
+  exp.coder: strong
+fallbacks:                   # 主模型连续失败时改用
+  fast: []

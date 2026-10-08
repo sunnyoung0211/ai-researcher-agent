@@ -1,0 +1,105 @@
+"""文件读写小工具：原子写、哈希、时间。所有模块都用这里的函数写文件，保证崩溃时不会留下半个文件。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import secrets
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+
+def now() -> datetime:
+    """带本地时区的当前时间（文档约定：ISO 8601 带时区）。"""
+    return datetime.now().astimezone()
+
+
+def rand_hex(n: int = 4) -> str:
+    return secrets.token_hex((n + 1) // 2)[:n]
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """先写临时文件再 rename：读者要么看到旧内容，要么看到新内容。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    atomic_write_bytes(path, text.encode("utf-8"))
+
+
+def to_jsonable(obj: Any) -> Any:
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    return obj
+
+
+def dumps(obj: Any, indent: int | None = 2) -> str:
+    return json.dumps(to_jsonable(obj), ensure_ascii=False, indent=indent, default=str)
+
+
+def atomic_write_json(path: Path, obj: Any) -> None:
+    atomic_write_text(path, dumps(obj) + "\n")
+
+
+def read_json(path: Path) -> Any:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def append_jsonl(path: Path, obj: Any) -> None:
+    """只追加日志：一行一个 JSON。调用方负责加锁。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(to_jsonable(obj), ensure_ascii=False, default=str)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+        f.flush()
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    path = Path(path)
+    if not path.exists():
+        return []
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                # 崩溃时最后一行可能写了一半：跳过，不影响其他记录
+                continue
+    return out
