@@ -41,6 +41,8 @@ class NetworkPerm(BaseModel):
         default_factory=lambda: [
             "api.semanticscholar.org", "export.arxiv.org", "arxiv.org",
             "huggingface.co", "cdn-lfs.huggingface.co",
+            # 大模型接口（LLM 网关调用前会检查）；本地模型（如 Ollama）走 localhost
+            "api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com", "localhost", "127.0.0.1",
         ]
     )
 
@@ -88,7 +90,9 @@ class ProjectConfig(BaseModel):
     task: str
     evidence_check: bool = True
     reading_mode: Literal["multi", "single"] = "multi"
-    models: dict[str, str] = Field(default_factory=dict)
+    # 覆盖模型配置（结构同 configs/models.yaml：tiers / stages / roles / models / fallbacks）；
+    # 旧写法 {fast: 模型名, strong: 模型名} 当作 tiers。见 llm/models.py
+    models: dict[str, Any] = Field(default_factory=dict)
     budget: dict[str, Limit] = Field(default_factory=_default_budget)
     limits: Limits = Field(default_factory=Limits)
     permissions: Permissions = Field(default_factory=Permissions)
