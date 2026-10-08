@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 from airesearcher.core.fsutil import atomic_write_text, dumps, now, sha256_bytes
 from airesearcher.core.models.aggregate import Aggregate
@@ -93,6 +94,46 @@ def minimal_pdf(lines: list[str]) -> bytes:
     out += "".join(f"{off:010d} 00000 n \n" for off in offsets).encode()
     out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return out
+
+
+def compile_paper(paper: Path, enabled: bool = True) -> CompileReport:
+    """编译 paper/main.tex（7.4）。没有 latexmk 或 enabled=False 时写占位 PDF，并在报告中说明。"""
+    build = paper / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    t0 = time.monotonic()
+    latexmk = shutil.which("latexmk")
+    if enabled and latexmk:
+        env = {**os.environ, "openin_any": "p", "openout_any": "p"}
+        try:
+            r = subprocess.run([latexmk, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
+                                "-no-shell-escape", "-outdir=build", "main.tex"], cwd=paper, env=env,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=180)
+            ok = r.returncode == 0 and (build / "main.pdf").exists()
+            main_log = build / "main.log"
+            log = main_log.read_text(encoding="utf-8", errors="replace") if main_log.exists() else ""
+            errors = [{"file": "main.tex", "line": None, "message": ln} for ln in log.splitlines()
+                      if ln.startswith("!")][:20]
+            undefined = sorted(set(re.findall(r"Citation `([^']+)' .*undefined", log)))
+            pages = re.search(r"Output written on .*\((\d+) page", log)
+            return CompileReport(ok=ok, engine="latexmk -pdf", entry="main.tex", errors=errors,
+                                 undefined_citations=undefined, log_path="paper/build/main.log",
+                                 pages=int(pages.group(1)) if pages else None,
+                                 seconds=round(time.monotonic() - t0, 2))
+        except subprocess.TimeoutExpired:
+            pass
+    reason = "latexmk 不可用" if not latexmk else "dev.compile=false 或编译超时"
+    text = ["AI Researcher Agent - placeholder PDF", f"({reason}; LaTeX sources are in paper/)", ""]
+    for name in ("abstract", "results", "conclusion"):
+        p = paper / "sections" / f"{name}.tex"
+        if p.exists():
+            body = [ln for ln in p.read_text(encoding="utf-8").splitlines() if not ln.startswith("%")]
+            text += [f"[{name}]", *body[:12], ""]
+    (build / "main.pdf").write_bytes(minimal_pdf(text))
+    (build / "main.md").write_text("\n".join(text) + "\n", encoding="utf-8")
+    return CompileReport(ok=False, engine="placeholder", entry="main.tex",
+                         errors=[{"file": "main.tex", "line": None, "message": f"{reason}：生成了占位 PDF"}],
+                         log_path="paper/build/main.md", seconds=round(time.monotonic() - t0, 2))
 
 
 # ---------------------------------------------------------------- 阶段
@@ -301,43 +342,7 @@ class FakeWritingStage:
 
     # ------------------------------------------------------------ 3 编译、登记、核验
     def _compile(self, ctx: StageContext) -> CompileReport:
-        paper = ctx.root / "paper"
-        build = paper / "build"
-        build.mkdir(parents=True, exist_ok=True)
-        t0 = time.monotonic()
-        latexmk = shutil.which("latexmk")
-        if ctx.project.dev.compile and latexmk:
-            env = {**os.environ, "openin_any": "p", "openout_any": "p"}
-            try:
-                r = subprocess.run([latexmk, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
-                                    "-no-shell-escape", "-outdir=build", "main.tex"], cwd=paper, env=env,
-                                   capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                   timeout=180)
-                ok = r.returncode == 0 and (build / "main.pdf").exists()
-                main_log = build / "main.log"
-                log = main_log.read_text(encoding="utf-8", errors="replace") if main_log.exists() else ""
-                errors = [{"file": "main.tex", "line": None, "message": ln} for ln in log.splitlines()
-                          if ln.startswith("!")][:20]
-                undefined = sorted(set(re.findall(r"Citation `([^']+)' .*undefined", log)))
-                pages = re.search(r"Output written on .*\((\d+) page", log)
-                return CompileReport(ok=ok, engine="latexmk -pdf", entry="main.tex", errors=errors,
-                                     undefined_citations=undefined, log_path="paper/build/main.log",
-                                     pages=int(pages.group(1)) if pages else None,
-                                     seconds=round(time.monotonic() - t0, 2))
-            except subprocess.TimeoutExpired:
-                pass
-        reason = "latexmk 不可用" if not latexmk else "dev.compile=false 或编译超时"
-        text = ["AI Researcher Agent - placeholder PDF", f"({reason}; LaTeX sources are in paper/)", ""]
-        for name in ("abstract", "results", "conclusion"):
-            p = paper / "sections" / f"{name}.tex"
-            if p.exists():
-                body = [ln for ln in p.read_text(encoding="utf-8").splitlines() if not ln.startswith("%")]
-                text += [f"[{name}]", *body[:12], ""]
-        (build / "main.pdf").write_bytes(minimal_pdf(text))
-        (build / "main.md").write_text("\n".join(text) + "\n", encoding="utf-8")
-        return CompileReport(ok=False, engine="placeholder", entry="main.tex",
-                             errors=[{"file": "main.tex", "line": None, "message": f"{reason}：生成了占位 PDF"}],
-                             log_path="paper/build/main.md", seconds=round(time.monotonic() - t0, 2))
+        return compile_paper(ctx.root / "paper", enabled=ctx.project.dev.compile)
 
     def _compile_register_review(self, ctx: StageContext, s: dict) -> None:
         paper = ctx.root / "paper"

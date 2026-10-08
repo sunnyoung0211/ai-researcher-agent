@@ -16,6 +16,7 @@ from airesearcher.core.models.idea import (
     Baseline,
     DataSpec,
     Hypothesis,
+    IdeaScores,
     Method,
     Metric,
     SelectedIdea,
@@ -176,9 +177,8 @@ class FakeIdeaStage:
             lit = ctx.archive.latest(LITERATURE)
             scores = {d: {"score": 3, "rationale": "假实现：固定分数", "evidence": [], "to_verify": True}
                       for d in ("novelty", "feasibility", "impact", "testability", "risk")}
-            scores_ref = ctx.archive.put("idea/scores.json", "scores",
-                                         dumps({**scores, "note": "评分仅供参考，不是唯一决策依据",
-                                                "model": "fake", "prompt_version": 0}),
+            idea_scores = IdeaScores.model_validate({**scores, "model": "fake", "prompt_version": 0})
+            scores_ref = ctx.archive.put("idea/scores.json", "scores", dumps(idea_scores),
                                          producer="agent:idea/scorer")
             gap_ref = ctx.archive.put("idea/gap_table.md", "gap_table",
                                       "# 差异表（假实现）\n\n| 已有工作 | 本研究的不同 |\n|---|---|\n"

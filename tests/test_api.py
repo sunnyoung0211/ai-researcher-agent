@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from airesearcher.server.app import create_app
 
-from .api_helpers import create, decide, wait_state
+from .api_helpers import create, decide, wait_state, wait_until
 
 
 @pytest.fixture
@@ -43,8 +43,10 @@ def test_api_end_to_end(client):
     # 过期的 expected_sha256 → 409，审批被标为 superseded，阶段重新提交新的审批
     old_aid, r = decide(c, pid, sha="0" * 64)
     assert r.status_code == 409
-    st = wait_state(c, pid, "PlanPending")
-    assert st["pending_approvals"][0]["approval_id"] != old_aid
+    # 引擎需要片刻才能让阶段重新提交：等到出现新的待审批
+    st = wait_until(c, pid, lambda st: st["pending_approvals"] and st["pending_approvals"][0]["approval_id"] != old_aid,
+                    what="新的计划审批")
+    assert st["state"] == "PlanPending"
     decide(c, pid)
 
     wait_state(c, pid, "LogPending", timeout=90)

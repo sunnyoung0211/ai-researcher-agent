@@ -90,7 +90,8 @@ class LocalExecutor:
     def prepare(self, spec: RunSpec) -> None:
         rec = spec.record
         d = self.run_dir(rec.run_id)
-        self.project.permissions.guard("write", str(d), actor="executor")
+        # 用相对路径：权限事件日志里不出现本机目录
+        self.project.permissions.guard("write", f"runs/{rec.run_id}", actor="executor")
         d.mkdir(parents=True, exist_ok=True)
         (d / "outputs").mkdir(exist_ok=True)
         if not (d / "run.json").exists():  # run.json 创建后不再修改

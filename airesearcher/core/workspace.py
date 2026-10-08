@@ -17,8 +17,9 @@ PROJECT_SUBDIRS = [
     "artifacts", "paper", "logs", ".archive", ".state/checkpoints", ".llm",
 ]
 
-# 工作区 git 只跟踪 src/ 和 configs/
-GITIGNORE = "/*\n!/.gitignore\n!/src/\n!/configs/\n"
+# 工作区 git 只跟踪 src/ 和 configs/。规则写在 .git/info/exclude（而不是项目根目录的 .gitignore），
+# 这样把项目目录复制进别的 git 仓库（如 fixtures/sample_project/）时不会影响那个仓库。
+GIT_EXCLUDE = "/*\n!/src/\n!/configs/\n"
 
 _REGISTRY_LOCK = threading.Lock()
 
@@ -99,13 +100,15 @@ class Workspace:
     def init_git(self) -> None:
         if not self.has_git:
             return
-        (self.root / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
         for d in ("src", "configs"):
             keep = self.root / d / ".gitkeep"
             keep.parent.mkdir(parents=True, exist_ok=True)
             keep.touch()
         if not (self.root / ".git").exists():
             self._git("init", "-q")
+        exclude = self.root / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text(GIT_EXCLUDE, encoding="utf-8")
         self.commit("初始化工作区", author="system")
 
     def head(self) -> str | None:

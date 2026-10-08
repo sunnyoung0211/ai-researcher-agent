@@ -13,6 +13,7 @@ from airesearcher.core.models.run import RunState
 from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.services import runs as run_service
+from airesearcher.testing.contracts import check_project
 
 from .helpers import approve_pending, drive
 
@@ -77,6 +78,8 @@ def test_full_flow_to_completed(air_home):
 
     drive(eng, S.Completed)
     assert set(eng.ck.approved) == {"idea", "plan", "log", "manuscript"}
+    report = check_project(p.root)  # 假实现写出的所有文件都符合契约
+    assert report.ok, report.text()
     types = [e.type for e in p.events.all()]
     for t in ("project.created", "approval.requested", "approval.decided", "run.created", "run.status_changed",
               "state.changed", "artifact.created"):
