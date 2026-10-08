@@ -1,0 +1,101 @@
+"""项目、问题、预算、事件（详细设计 1 第 9.2 节“项目”）。"""
+
+from __future__ import annotations
+
+import yaml
+from fastapi import APIRouter, Depends
+
+from airesearcher.core.errors import ValidationFailed
+from airesearcher.core.models.budget import BudgetStatus
+from airesearcher.core.models.event import Event
+from airesearcher.core.models.project import Limit
+from airesearcher.core.models.question import Question
+from airesearcher.core.workspace import repo_root
+
+from ..deps import manager
+from ..manager import ProjectManager
+from ..schemas import (
+    ActionRequest,
+    AnswerRequest,
+    BudgetPatch,
+    CreateProject,
+    ProjectStatus,
+    ProjectSummary,
+    TaskInfo,
+)
+
+router = APIRouter(prefix="/api", tags=["projects"])
+
+
+@router.get("/tasks", response_model=list[TaskInfo])
+def list_tasks() -> list[TaskInfo]:
+    out = []
+    for p in sorted((repo_root() / "tasks").glob("*/task.yaml")):
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        out.append(TaskInfo(name=data.get("name", p.parent.name), path=f"tasks/{p.parent.name}",
+                            domain=data.get("domain", ""), description=data.get("description", "")))
+    return out
+
+
+@router.get("/projects", response_model=list[ProjectSummary])
+def list_projects(m: ProjectManager = Depends(manager)) -> list[ProjectSummary]:
+    rows = [m.summary(pid) for pid in list(m.projects)]
+    return sorted(rows, key=lambda r: r.created_at, reverse=True)
+
+
+@router.post("/projects", response_model=ProjectSummary)
+def create_project(body: CreateProject, m: ProjectManager = Depends(manager)) -> ProjectSummary:
+    if not body.idea_text.strip():
+        raise ValidationFailed("请填写研究想法（idea_text）")
+    try:
+        p = m.create(body)
+    except FileNotFoundError as e:
+        raise ValidationFailed(str(e)) from e
+    return m.summary(p.project_id)
+
+
+@router.get("/projects/{pid}", response_model=ProjectStatus)
+def get_status(pid: str, m: ProjectManager = Depends(manager)) -> ProjectStatus:
+    return m.status(pid)
+
+
+@router.post("/projects/{pid}/actions", response_model=ProjectStatus)
+def project_action(pid: str, body: ActionRequest, m: ProjectManager = Depends(manager)) -> ProjectStatus:
+    m.engine(pid).request_action(body.action, body.request_id)
+    return m.status(pid)
+
+
+@router.get("/projects/{pid}/question", response_model=Question | None)
+def get_question(pid: str, m: ProjectManager = Depends(manager)) -> Question | None:
+    return m.get(pid).questions.pending()
+
+
+@router.post("/projects/{pid}/question/answer", response_model=ProjectStatus)
+def answer_question(pid: str, body: AnswerRequest, m: ProjectManager = Depends(manager)) -> ProjectStatus:
+    m.get(pid).questions.answer(body.question_id, body.choice, body.text, request_id=body.request_id)
+    m.wait_settled(pid, lambda e: e.ck.pending_question != body.question_id)
+    return m.status(pid)
+
+
+@router.patch("/projects/{pid}/budget", response_model=BudgetStatus)
+def patch_budget(pid: str, body: BudgetPatch, m: ProjectManager = Depends(manager)) -> BudgetStatus:
+    p = m.get(pid)
+    cfg = p.config.model_copy(deep=True)
+    changes = {k: v for k, v in (body.model_extra or {}).items()}
+    for cat, lim in changes.items():
+        if not isinstance(lim, dict):
+            raise ValidationFailed(f"{cat} 应为 {{soft, hard}}")
+        cur = cfg.budget.get(cat) or Limit()
+        cfg.budget[cat] = Limit.model_validate({**cur.model_dump(), **lim})
+    if changes:
+        p.save_config(cfg, summary=f"调整预算上限：{changes}", actor="user")
+    return p.budget.check()
+
+
+@router.get("/projects/{pid}/events", response_model=list[Event])
+def list_events(pid: str, after_seq: int = 0, type: str | None = None, run_id: str | None = None,
+                q: str | None = None, artifact_id: str | None = None, limit: int = 200,
+                m: ProjectManager = Depends(manager)) -> list[Event]:
+    types = [t for t in (type or "").split(",") if t] or None
+    return m.get(pid).events.query(types=types, run_id=run_id, artifact_id=artifact_id, text=q,
+                                   after_seq=after_seq, limit=limit)

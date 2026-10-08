@@ -1,0 +1,160 @@
+"""后台进程内的项目管理：打开注册表中的项目、启动核对（5.6）、每个项目一个引擎线程。"""
+
+from __future__ import annotations
+
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+from airesearcher.core.errors import NotFound
+from airesearcher.core.models.approval import ApprovalBrief
+from airesearcher.core.project import Project
+from airesearcher.core.workspace import air_home, load_registry
+from airesearcher.engine.engine import ProjectEngine
+from airesearcher.engine.recovery import reconcile_runs
+from airesearcher.engine.states import (
+    ACTIVE_STATES,
+    DRAFTING_FOR_KIND,
+    KIND_FOR_PENDING,
+    KIND_LABELS,
+    RESUMABLE,
+    STATE_LABELS,
+)
+from airesearcher.runtime.local import LocalExecutor
+from airesearcher.services.runs import ACTIVE as ACTIVE_RUN_STATES
+from airesearcher.services.runs import list_runs
+from airesearcher.stages import STAGE_FOR_STATE
+
+from .schemas import CreateProject, ProjectStatus, ProjectSummary
+
+
+class ProjectManager:
+    def __init__(self, home: Path | None = None, start_engines: bool = True, engine_kwargs: dict | None = None):
+        self.home = home or air_home()
+        self.start_engines = start_engines
+        self.engine_kwargs = engine_kwargs or {}
+        self.projects: dict[str, Project] = {}
+        self.engines: dict[str, ProjectEngine] = {}
+        self._create_requests: dict[str, str] = {}
+        self._lock = threading.RLock()
+        self.startup_report: dict[str, list] = {}
+
+    # ---------------------------------------------------------------- 生命周期
+    def startup(self) -> None:
+        for pid, path in load_registry(self.home).items():
+            try:
+                self._open(pid, Path(path))
+            except Exception as e:  # 一个项目坏了不影响其他项目
+                self.startup_report[pid] = [f"无法打开：{e}"]
+
+    def _open(self, pid: str, root: Path) -> ProjectEngine:
+        project = Project.open(root)
+        executor = LocalExecutor(project)
+        self.startup_report[pid] = reconcile_runs(project, executor)
+        engine = ProjectEngine(project, executor=executor, **self.engine_kwargs)
+        with self._lock:
+            self.projects[pid] = project
+            self.engines[pid] = engine
+        if self.start_engines:
+            engine.start()
+        return engine
+
+    def shutdown(self) -> None:
+        for eng in list(self.engines.values()):
+            try:
+                eng.stop()
+            except Exception:
+                pass
+
+    # ---------------------------------------------------------------- 访问
+    def get(self, pid: str) -> Project:
+        try:
+            return self.projects[pid]
+        except KeyError:
+            raise NotFound(f"找不到项目 {pid}") from None
+
+    def engine(self, pid: str) -> ProjectEngine:
+        self.get(pid)
+        return self.engines[pid]
+
+    def create(self, body: CreateProject) -> Project:
+        with self._lock:
+            if body.request_id and body.request_id in self._create_requests:
+                return self.get(self._create_requests[body.request_id])
+            fields: dict[str, Any] = {"constraints": body.constraints, "evidence_check": body.evidence_check}
+            if body.budget:
+                fields["budget"] = body.budget
+            if body.dev:
+                fields["dev"] = body.dev
+            project = Project.create(goal=body.idea_text, task=body.task, title=body.title, home=self.home,
+                                     **fields)
+            self._open(project.project_id, project.root)
+            if body.request_id:
+                self._create_requests[body.request_id] = project.project_id
+            return self.projects[project.project_id]
+
+    def wait_settled(self, pid: str, predicate: Any, timeout: float = 3.0) -> None:
+        """写操作后稍等引擎处理（让 CLI 立刻看到新状态）；引擎忙时不等太久。"""
+        eng = self.engine(pid)
+        if not eng.running:
+            return
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            if predicate(eng):
+                return
+            time.sleep(0.05)
+
+    # ---------------------------------------------------------------- 状态页
+    def summary(self, pid: str) -> ProjectSummary:
+        p, eng = self.get(pid), self.engine(pid)
+        st = self.status(pid)
+        return ProjectSummary(
+            project_id=pid, title=p.config.title, state=eng.ck.state, stage_label=st.stage_label,
+            pending_approvals=len(st.pending_approvals), has_question=st.pending_question is not None,
+            created_at=p.config.created_at, updated_at=eng.ck.saved_at, root=str(p.root),
+        )
+
+    def status(self, pid: str) -> ProjectStatus:
+        p, eng = self.get(pid), self.engine(pid)
+        ck = eng.ck
+        state = ck.state
+        pending = p.approvals.pending()
+        question = p.questions.pending()
+        if state in ACTIVE_STATES:
+            stage = STAGE_FOR_STATE[state]
+        elif state in KIND_FOR_PENDING:
+            stage = STAGE_FOR_STATE.get(DRAFTING_FOR_KIND[KIND_FOR_PENDING[state]])
+        else:
+            stage = STAGE_FOR_STATE.get(ck.resume_to) if ck.resume_to else None
+        label = ck.scratch.get("_label") if state in ACTIVE_STATES else None
+        stage_label = label or STATE_LABELS[state]
+
+        blocking = None
+        if pending:
+            a = pending[0]
+            blocking = f"等待你审批「{KIND_LABELS[a.kind]}」（{a.target.artifact_id} v{a.target.version}）"
+        elif question is not None:
+            blocking = "等待你回答问题：" + question.text.strip().splitlines()[0][:80]
+        elif state in RESUMABLE:
+            blocking = f"{STATE_LABELS[state]}：{ck.reason}" if ck.reason else STATE_LABELS[state]
+
+        actions = [f"approve:{a.approval_id}" for a in pending]
+        if question is not None:
+            actions.append(f"answer:{question.question_id}")
+        elif state in RESUMABLE:
+            actions.append("resume")
+        if state in ACTIVE_STATES:
+            actions.append("pause")
+        if state.value == "Completed":
+            actions.append("reopen")
+
+        runs = [r.summary() for r in list_runs(p.root) if r.status.state in ACTIVE_RUN_STATES]
+        return ProjectStatus(
+            project_id=pid, title=p.config.title, state=state, stage=stage, stage_label=stage_label,
+            progress=ck.scratch.get("_progress", {}) if state in ACTIVE_STATES else {},
+            blocking_reason=blocking, pending_approvals=[ApprovalBrief.of(a) for a in pending],
+            pending_question=question, active_runs=runs, budget=p.budget.status(), next_actions=actions,
+            updated_at=ck.saved_at, root=str(p.root),
+        )
+

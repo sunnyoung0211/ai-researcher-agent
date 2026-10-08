@@ -43,3 +43,4 @@ ignore = ["B008", "UP042"]  # UP042：文档约定用 (str, Enum)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
