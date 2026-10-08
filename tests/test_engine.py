@@ -147,7 +147,7 @@ def test_human_edit_of_pending_target_returns_to_drafting(project):
     eng = engine(project, idea=idea)
     drive(eng, S.IdeaPending)
     [old] = project.approvals.pending()
-    (project.root / "idea/selected.md").write_text("用户手工改过")
+    (project.root / "idea/selected.md").write_text("用户手工改过", encoding="utf-8")
     eng.tick()  # 检测到人工编辑 → 旧审批 superseded → 回到起草状态
     assert project.approvals.get(old.approval_id).status == "superseded"
     drive(eng, S.IdeaPending)

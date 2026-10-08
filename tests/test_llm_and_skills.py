@@ -17,7 +17,7 @@ def test_schema_validation_retry_and_accounting(project):
     resp = llm.complete(role="example.writer", prompt_id="example/summarize", variables={"goal": "g", "note": ""},
                         response_schema=Summary)
     assert resp.parsed.title == "T" and resp.prompt_version == 1
-    calls = [json.loads(x) for x in (project.root / ".llm/calls.jsonl").read_text().splitlines()]
+    calls = [json.loads(x) for x in (project.root / ".llm/calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert calls[0]["attempts"] == 2 and calls[0]["ok"] and calls[0]["call_id"] == resp.call_id
     used = project.budget.used()
     assert used["llm_calls"] == 1 and used["llm_tokens"] > 0
@@ -87,7 +87,7 @@ def test_literature_service(project):
     from airesearcher.stages.fakes.idea import fake_papers
 
     (project.root / "idea/literature.jsonl").write_text(
-        "".join(p.model_dump_json() + "\n" for p in fake_papers("q")))
+        "".join(p.model_dump_json() + "\n" for p in fake_papers("q")), encoding="utf-8")
     assert literature.verify_citation(project.root, "arxiv:2106.09685").status == "verified"
     assert literature.verify_citation(project.root, "arxiv:9999.99999").status == "not_in_archive"
     assert literature.resolve_citation_key(project.root, "hu2022lora") == "arxiv:2106.09685"

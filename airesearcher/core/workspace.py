@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
+import tarfile
 import threading
 from pathlib import Path
 
@@ -91,12 +93,13 @@ class Workspace:
             "git", "-c", f"user.name={name}", "-c", "user.email=air@localhost", "-c", "commit.gpgsign=false",
             *args,
         ]
-        return subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, check=check)
+        return subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", check=check)
 
     def init_git(self) -> None:
         if not self.has_git:
             return
-        (self.root / ".gitignore").write_text(GITIGNORE)
+        (self.root / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
         for d in ("src", "configs"):
             keep = self.root / d / ".gitkeep"
             keep.parent.mkdir(parents=True, exist_ok=True)
@@ -141,4 +144,6 @@ class Workspace:
         archive = subprocess.run(
             ["git", "archive", "--format=tar", f"{commit}:src"], cwd=self.root, capture_output=True, check=True
         )
-        subprocess.run(["tar", "-x", "-C", str(dest)], input=archive.stdout, check=True)
+        # 用 Python 自带的 tarfile 解包（Windows 上不一定有 tar 命令）
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tf:
+            tf.extractall(dest, filter="data")

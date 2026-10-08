@@ -46,10 +46,10 @@ def test_approval_wrong_expected_sha(project):
 
 def test_manuscript_blocker_needs_comment(project):
     paper = project.root / "paper"
-    (paper / "main.tex").write_text("x")
+    (paper / "main.tex").write_text("x", encoding="utf-8")
     ref = project.archive.put("paper", "paper", paper, exclude=["build/**", "review/**"])
     (paper / "review").mkdir()
-    (paper / "review/review_v1.json").write_text('{"counts": {"blocker": 2}}')
+    (paper / "review/review_v1.json").write_text('{"counts": {"blocker": 2}}', encoding="utf-8")
     aid = project.approvals.request(ref, "manuscript", "s", "i")
     with pytest.raises(ValidationFailed):
         project.approvals.decide(aid, "approved", ref.sha256, "", request_id="r1")
@@ -119,11 +119,11 @@ def test_workspace_git_tracks_only_src_and_configs(project):
     ws = project.workspace
     if not ws.has_git:
         pytest.skip("no git")
-    (project.root / "src/run.py").write_text("print(1)")
-    (project.root / "idea/notes.md").write_text("not tracked")
+    (project.root / "src/run.py").write_text("print(1)", encoding="utf-8")
+    (project.root / "idea/notes.md").write_text("not tracked", encoding="utf-8")
     sha = ws.commit("add code")
     assert sha and sha != "nogit"
     assert ws.commit("nothing changed") == sha
     out = project.root / "export"
     ws.export_src(sha, out)
-    assert (out / "run.py").read_text() == "print(1)"
+    assert (out / "run.py").read_text(encoding="utf-8") == "print(1)"

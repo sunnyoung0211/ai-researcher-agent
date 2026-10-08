@@ -57,7 +57,7 @@ def test_restart_while_runs_running(air_home):
     root = load_registry(air_home)[pid]
     import pathlib
 
-    statuses = [json.loads(p.read_text()) for p in pathlib.Path(root, "runs").glob("*/status.json")]
+    statuses = [json.loads(p.read_text(encoding="utf-8")) for p in pathlib.Path(root, "runs").glob("*/status.json")]
     running = [s["run_id"] for s in statuses if s["state"] in ("running", "queued")]
     assert running, statuses
 
@@ -86,7 +86,8 @@ def test_runs_finish_while_backend_down(air_home):
     import pathlib
 
     def states():
-        return {json.loads(p.read_text())["state"] for p in pathlib.Path(root, "runs").glob("*/status.json")}
+        files = pathlib.Path(root, "runs").glob("*/status.json")
+        return {json.loads(p.read_text(encoding="utf-8"))["state"] for p in files}
 
     t0 = time.time()
     while states() & {"running", "queued", "preparing"}:

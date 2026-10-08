@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,18 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _replace(src: str, dst: Path) -> None:
+    """os.replace，Windows 上目标文件正被别的进程打开时会短暂失败，重试几次。"""
+    for i in range(50):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == 49:
+                raise
+            time.sleep(0.02)
+
+
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     """先写临时文件再 rename：读者要么看到旧内容，要么看到新内容。"""
     path = Path(path)
@@ -45,7 +58,7 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -73,8 +86,14 @@ def atomic_write_json(path: Path, obj: Any) -> None:
 
 
 def read_json(path: Path) -> Any:
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    for i in range(50):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except PermissionError:  # Windows：文件正被原子替换
+            if i == 49:
+                raise
+            time.sleep(0.02)
 
 
 def append_jsonl(path: Path, obj: Any) -> None:

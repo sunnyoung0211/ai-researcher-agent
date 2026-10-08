@@ -17,7 +17,7 @@ from airesearcher.runtime.local import LocalExecutor, config_sha256, expand_entr
 
 def _spec(project, ex, run_id, config, timeout=30):
     task_dir = resolve_task_dir("tasks/smoke")
-    task = TaskConfig.model_validate(yaml.safe_load((task_dir / "task.yaml").read_text()))
+    task = TaskConfig.model_validate(yaml.safe_load((task_dir / "task.yaml").read_text(encoding="utf-8")))
     src = project.root / "src"
     shutil.copytree(task_dir / "template", src, dirs_exist_ok=True)
     commit = project.workspace.commit("smoke template")

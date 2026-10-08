@@ -74,7 +74,7 @@ def paper_pdf(pid: str, version: int | None = None, m: ProjectManager = Depends(
 @router.get("/claims")
 def list_claims(pid: str, m: ProjectManager = Depends(manager)) -> dict:
     root = m.get(pid).root
-    claims = [json.loads(line) for line in (root / "paper" / "claims.jsonl").read_text().splitlines()
+    claims = [json.loads(line) for line in (root / "paper" / "claims.jsonl").read_text(encoding="utf-8").splitlines()
               if line.strip()] if (root / "paper" / "claims.jsonl").exists() else []
     reports = sorted((root / "paper" / "review").glob("review_v*.json"),
                      key=lambda x: int(x.stem.removeprefix("review_v") or 0))

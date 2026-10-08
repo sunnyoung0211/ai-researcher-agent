@@ -29,24 +29,24 @@ def test_full_flow_to_completed(air_home):
     eng = ProjectEngine(p, retry_delay=0)
 
     drive(eng, S.IdeaPending)
-    idea = parse_selected_md((p.root / "idea/selected.md").read_text())
+    idea = parse_selected_md((p.root / "idea/selected.md").read_text(encoding="utf-8"))
     assert idea.task["task_config"] == "tasks/smoke" and idea.primary_metric().name == "score"
-    for line in (p.root / "idea/literature.jsonl").read_text().splitlines():
+    for line in (p.root / "idea/literature.jsonl").read_text(encoding="utf-8").splitlines():
         PaperRecord.model_validate_json(line)
     # 退回一次：生成新版本并写明意见
     approve_pending(p, "changes_requested", "请把研究问题写得更具体")
     drive(eng, S.IdeaPending)
-    assert "请把研究问题写得更具体" in (p.root / "idea/selected.md").read_text()
+    assert "请把研究问题写得更具体" in (p.root / "idea/selected.md").read_text(encoding="utf-8")
     assert p.archive.latest("idea/selected.md").version == 2
     approve_pending(p)
 
     drive(eng, S.PlanPending)
-    plan = parse_plan_md((p.root / "plan/experiment_plan.md").read_text())
+    plan = parse_plan_md((p.root / "plan/experiment_plan.md").read_text(encoding="utf-8"))
     assert [e.kind for e in plan.experiments] == ["baseline", "main", "ablation"]
     assert plan.idea_ref.version == 2
-    tasks = [PlanTask.model_validate(t) for t in json.loads((p.root / "plan/tasks.json").read_text())]
+    tasks = [PlanTask.model_validate(t) for t in json.loads((p.root / "plan/tasks.json").read_text(encoding="utf-8"))]
     assert len(tasks) == 9
-    [PrecheckItem.model_validate(c) for c in json.loads((p.root / "plan/precheck.json").read_text())]
+    [PrecheckItem.model_validate(c) for c in json.loads((p.root / "plan/precheck.json").read_text(encoding="utf-8"))]
     approve_pending(p)
 
     drive(eng, S.LogPending, timeout=90)
@@ -62,10 +62,11 @@ def test_full_flow_to_completed(air_home):
     approve_pending(p)
 
     drive(eng, S.ManuscriptPending)
-    claims = [Claim.model_validate_json(x) for x in (p.root / "paper/claims.jsonl").read_text().splitlines()]
+    lines = (p.root / "paper/claims.jsonl").read_text(encoding="utf-8").splitlines()
+    claims = [Claim.model_validate_json(x) for x in lines]
     assert claims and all(c.evidence for c in claims)
-    assert "\\airval" in (p.root / "paper/sections/results.tex").read_text()
-    review = CheckReport.model_validate_json((p.root / "paper/review/review_v1.json").read_text())
+    assert "\\airval" in (p.root / "paper/sections/results.tex").read_text(encoding="utf-8")
+    review = CheckReport.model_validate_json((p.root / "paper/review/review_v1.json").read_text(encoding="utf-8"))
     assert review.counts["blocker"] == 0
     paper_v = p.archive.latest_version("paper")
     assert paper_v.exclude == ["build/**", "review/**", ".template_check_default.json"]
