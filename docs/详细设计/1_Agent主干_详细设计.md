@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.3（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试。改动汇总见附录 B）  
+**文档版本：** v0.4（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`。改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -310,9 +310,8 @@ constraints: {compute: "本机 CPU/单 GPU", data: "公开数据集", time: "6 �
 task: tasks/text_cls_lowres   # 领域任务配置（【实验】定义格式）。创建项目时由用户选定，之后各阶段只能沿用，不能修改
 evidence_check: true          # D9：主对照实验的开关
 reading_mode: multi           # multi | single，文献对比实验的开关
-models:                       # 可选，覆盖全局 configs/models.yaml 的分层
-  fast: anthropic/claude-haiku-5-5
-  strong: anthropic/claude-sonnet-5-5
+models:                       # 可选，覆盖模型配置（结构同 6.1：tiers / stages / roles / models / fallbacks）
+  stages: {idea: {fast: gpt-mini}}   # 旧写法 {fast: 模型, strong: 模型} 仍可用，当作 tiers
 budget:
   llm_usd:    {soft: 4.0, hard: 5.0}
   wall_hours: {hard: 6}
@@ -325,7 +324,9 @@ limits:
   max_rounds: 3
   max_repair_retries: 2
 permissions:
-  network: {allow: [api.semanticscholar.org, export.arxiv.org, arxiv.org, huggingface.co, cdn-lfs.huggingface.co]}
+  network: {allow: [api.semanticscholar.org, export.arxiv.org, arxiv.org, huggingface.co, cdn-lfs.huggingface.co,
+                    api.anthropic.com, api.openai.com, generativelanguage.googleapis.com, localhost, 127.0.0.1]}
+                              # v0.4：后五项供 LLM 网关使用；自定义 api_base 的模型需把其域名加到这里
   exec:    {local: true, gpu_serial: true, max_parallel_cpu: 2}
   write:   {roots: [".", "${AIR_HOME}/data"]}   # 项目根目录 + 共用数据缓存
   publish: false
@@ -623,24 +624,45 @@ v0.2 增加的三个字段：`answer`（已回答、待交给阶段的 `Answer`�
 
 ## 6. LLM 网关（`llm/`）
 
-### 6.1 模型分层与路由
+### 6.1 模型登记与选择（v0.4 改为三层配置）
 
-全局配置 `configs/models.yaml`（项目可覆盖）：
+**目标：** 用户可以登记多个模型（不同供应商、本地模型），每个阶段分别选用；换模型不改代码。
+
+**三层配置，后者覆盖前者：**
+
+| 层 | 位置 | 内容 |
+|---|---|---|
+| 仓库默认 | `configs/models.yaml` | 默认模型与示例，进仓库 |
+| 用户配置 | `${AIR_HOME}/models.yaml` | 每人自己的模型和 Key 变量名，不进仓库（`air models init` 生成模板） |
+| 项目覆盖 | `project.yaml` 的 `models` | 某个项目临时换模型（如评价实验固定模型） |
 
 ```yaml
-tiers:
-  fast:   {model: anthropic/claude-haiku-5-5,  max_tokens: 4096, temperature: 0.2}
-  strong: {model: anthropic/claude-sonnet-5-5, max_tokens: 8192, temperature: 0.2}
-roles:                       # 可选：按角色覆盖分层
-  lit.coordinator: strong
-  exp.coder: strong
-fallbacks:                   # 主模型连续失败时改用
-  fast: [openai/gpt-5-mini]
+models:                       # 给每个模型起一个名字（别名）
+  claude-fast:   {model: anthropic/claude-haiku-5-5,  key_env: ANTHROPIC_API_KEY, max_tokens: 4096}
+  claude-strong: {model: anthropic/claude-sonnet-5-5, key_env: ANTHROPIC_API_KEY, max_tokens: 8192}
+  gpt-mini:      {model: openai/gpt-5-mini,           key_env: OPENAI_API_KEY}
+  local-qwen:    {model: ollama/qwen2.5, api_base: "http://localhost:11434"}   # 本地模型，不需要 Key
+tiers:  {fast: claude-fast, strong: claude-strong}   # 全局默认档位
+stages: {idea: {fast: gpt-mini}}                     # 某个阶段单独指定
+roles:  {lit.coordinator: strong, exp.coder: claude-strong}   # 可写档位名或模型别名
+fallbacks: {claude-fast: [gpt-mini]}                 # 主模型连续失败时改用
 ```
 
-- 通过 LiteLLM 调用，模型名用 LiteLLM 的 `provider/model` 格式，因此换供应商只改配置。
-- 选型原则（需求 6.1、7.4）：文献阅读等大批量调用用 `fast`；协调合并、idea 评分、编码、写作、核验用 `strong`。具体型号第 1 周用 10 次调用的小样本比较价格与输出质量后在本节更新。
-- 密钥只从环境变量读取（`ANTHROPIC_API_KEY` 等），网关启动时检查是否存在，日志中不出现密钥。
+模型条目的字段：`model`（LiteLLM 的 `provider/model`）、`key_env`、`api_base`、`max_tokens`、`temperature`（不写 = 不发送；当前的 Claude 模型不接受非默认值）、`params`（原样传给 LiteLLM 的其他参数）、`description`。也可以在任何位置直接写 `provider/model` 而不登记别名。
+
+**选择顺序：** 角色（项目 > 用户 > 默认）→ 阶段（项目 > 用户 > 默认）→ 全局档位（项目 > 用户 > 默认）。角色映射到档位名时，继续按阶段、全局档位查找。阶段名取自 `prompt_id` 的前缀（提示文件放在 `stages/<stage>/prompts/`）。
+
+**约定：** 阶段代码只请求档位（`tier="fast"` / `"strong"`，或在提示文件头部写 `tier`）或写角色名，**不写具体模型名**。需要第三档时在配置里加一个档位名即可。
+
+**Key：** 只放在环境变量或 `${AIR_HOME}/.env`（本机文件，不进仓库），配置里只写变量名。网关在真正调用时读取，Key 不进入请求对象、缓存键、调用日志、事件和 API 返回。
+
+**供应商差异：** 通过 LiteLLM 调用，各家的请求与返回（文本位置、token 用量字段、系统提示、工具调用格式）都统一成 OpenAI 格式；本项目只有 `LiteLLMBackend` 一处接触供应商返回的数据。结构化输出不用任何一家的专有写法（提示要求 JSON → 提取 → 校验 → 不合格让模型改），所以对所有模型通用。默认开启 LiteLLM 的 `drop_params`（丢掉模型不支持的参数）。
+
+**权限：** 每次调用前对模型接口的域名做网络权限检查（`api_base` 的域名，或供应商的默认域名），默认白名单见 3.10。
+
+**查看与测试：** `air models`（已登记的模型、Key 是否已设置、每个阶段实际用哪个模型）、`air models test <名字>`（一次极短的调用）、API `GET /api/models`、`POST /api/models/{name}/test`。
+
+**选型原则**（需求 6.1、7.4）：文献阅读等大批量调用用 `fast`；协调合并、idea 评分、编码、写作、核验用 `strong`。默认 `fast` = Claude Haiku 5.5，`strong` = Claude Sonnet 5.5，另登记了 Claude Opus 5.5 和 GPT-5 mini。第 1 周用小样本比较价格与输出质量后在这里更新。
 
 ### 6.2 提示文件
 
@@ -708,8 +730,9 @@ ctx.llm.wrap_untrusted(text: str, source: str) -> str
 ### 6.5 `tool_loop()`：给编码 Agent 等用的工具调用循环
 
 ```python
-@tool(action="write")                       # 声明权限类别，调用前自动 guard
-def write_file(path: str, content: str) -> str: ...
+@tool(action="write", target="path")        # 声明权限类别和“目标”所在的参数，调用前自动 guard
+def write_file(path: str, content: str) -> str:
+    """把内容写入项目内的文件。"""          # 文档字符串和类型注解自动生成给模型看的工具说明
 
 result = ctx.llm.tool_loop(
     role="exp.coder", prompt_id="experiment/coder", variables={...},
@@ -724,6 +747,7 @@ result.transcript   # 每轮的工具调用与返回（摘要），由调用方�
 - 工具函数抛出的异常会作为工具结果返回给模型（例如“权限拒绝：不能写 project.yaml”），不中断循环；
 - 单个工具返回值超过 8,000 字符时截断并注明；
 - 达到 `max_turns` 仍未调用 `finish` → 抛 `ToolLoopExhausted`。
+- v0.4 实现说明：`action="exec"` 时检查 `"local"`；不写 `action` 表示只读工具。模型只用文字回答时网关提醒它调用 `finish`；`finish` 参数不合格时把校验错误返回给模型重试。工具选择固定为 `auto`（较新的 Claude 模型不接受强制调用某个工具），助手消息（含思考块）原样带回。每轮模型调用单独记账、写调用日志。参数不是合法 JSON、调用不存在的工具，都作为工具结果返回给模型。
 
 ### 6.6 录制/回放缓存
 
@@ -1154,7 +1178,8 @@ air dev run-stage idea --workspace /tmp/ws --steps 3
 | 5.2 | 人工修改待审产物：引擎在等待状态检测到后把旧审批标为 `superseded`，转回对应 Drafting 状态，阶段重新提交最新版本。阶段实现找不到（如选了 `real` 但模块不存在）时转 `Failed` 并写明原因，修好后可 `resume` |
 | 5.5 | 检查点增加 `answer`、`reason`、`rejected_approval` 三个字段 |
 | 5.6 | 启动核对也会补收“后台停机期间已结束、但还没收集”的运行 |
-| 6.5 | `tool_loop()` 只有接口（调用时抛 `NotImplementedError`），第 2 周实现 |
+| 6.1 | v0.4：模型配置改为三层（仓库默认 / 用户 `${AIR_HOME}/models.yaml` / 项目），按“角色 → 阶段 → 全局档位”选择；Key 只在环境变量或 `${AIR_HOME}/.env`；新增 `air models`、`/api/models`；默认网络白名单加入 LLM 接口域名；价格兜底表按当前 Claude 价格更新 |
+| 6.5 | v0.4：`tool_loop()` 已实现，`@tool` 增加 `target` 参数（指明哪个参数是权限检查的目标）。用真实模型的多轮工具调用测试在 `tests/test_llm_real.py`（需设置 `AIR_REAL_LLM=1` 和 Key，CI 中不运行） |
 | 7 | skill 加载器为最小版本：`load()`、`instructions`、`path()`、`validate()`、`requires` 检查；`registry.yaml` 与 `air skills verify` 待做 |
 | 8.2 | 见上文 v0.2 约定；`air project rollback`、`air export`、`air cancel-run`、`air dev reindex` 尚未实现 |
 | 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`；SSE 为每秒轮询的简化版，只推 `state` 和 `event`（审批、问题、运行的变化都以 `event` 形式出现）；`/templates`、`/export`、`/runs/{id}/label`、`/runs/{id}/logs/stream` 尚未实现 |

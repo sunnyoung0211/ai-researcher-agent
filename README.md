@@ -184,6 +184,7 @@ air answer skip
 | `air question` / `air answer <选项> [-m 文字]` | 查看 / 回答系统的问题 |
 | `air pause` / `air resume` / `air cancel` / `air reopen` | 暂停 / 继续 / 取消 / 重新打开已完成的项目 |
 | `air runs` / `air logs <运行编号> [-f]` | 查看实验运行 / 运行日志 |
+| `air models` / `air models test <名字>` / `air models init` | 查看已配置的大模型 / 试调用一次 / 生成配置模板（见第 9 节） |
 | `air dev new-workspace <目录>` / `air dev run-stage <阶段> --workspace <目录>` | 开发调试用（不经过后台，见第 5 节） |
 
 - 大多数命令的“项目编号”可以省略，省略时用**最近创建的项目**。
@@ -251,7 +252,7 @@ air dev check /tmp/ws
 |---|---|
 | 流程引擎（状态机、检查点、重启恢复）、档案（版本、血缘、人工编辑检测）、审批、提问、预算、权限、事件日志 | **真实** |
 | 后台 API（FastAPI）、命令行 `air` | **真实**（SSE 推送是每秒轮询的简化版） |
-| LLM 网关 `complete()`（提示文件、格式校验与重试、记账、调用日志、录制/回放） | **真实**；`tool_loop()` 还没写（第 2 周） |
+| LLM 网关：`complete()`、工具调用循环 `tool_loop()`、按阶段选模型（提示文件、格式校验与重试、记账、调用日志、录制/回放） | **真实**；已用假模型测试，真实模型测试见第 9 节 |
 | 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实但精简**（没有环境 pip freeze、数据校验、GPU 串行），实验同学接手补全 |
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |
 | 证据核验 `services/evidence.py` | **部分**：只做了数字重算、过期证据、结论相反、引用不存在四项检查 |
@@ -290,3 +291,54 @@ lint-imports
 
 测试包括：从创建到完成的端到端流程（引擎、HTTP、CLI 三种方式）、审批去重与过期（409）、提问与回答、
 审批待处理时重启、运行进行中重启、后台停机期间运行结束、档案版本（含 `paper/` 目录）、引擎转换表。
+
+## 9. 配置大模型和 Key（真实调用大模型时才需要）
+
+用假实现跑流程**不需要**这一节。等你的阶段要真正调用大模型时：
+
+**① 生成配置模板**（只需一次）：
+
+```bash
+air models init
+```
+
+它会在 `~/air/`（Windows 上是 `C:\Users\你的用户名\air\`）生成两个文件：
+
+| 文件 | 作用 |
+|---|---|
+| `models.yaml` | 登记你能用的模型，并指定每个阶段用哪个 |
+| `.env` | 存放 API Key。**只在你的电脑上，不要提交到 git，不要发给别人** |
+
+**② 填 Key**：用记事本 / VS Code 打开 `~/air/.env`，去掉行首的 `#`，填上自己的 Key，例如 `ANTHROPIC_API_KEY=sk-ant-...`。
+
+**③ 看看配置是否生效**（需要后台在运行）：
+
+```bash
+air models
+```
+
+会列出每个模型、Key 是否已设置（只显示 ✓/✗，不显示 Key 本身）、以及每个阶段实际会用哪个模型。
+
+**④ 试调用一次**（费用不到 1 美分）：
+
+```bash
+air models test claude-fast
+```
+
+**换模型、给某个阶段单独指定模型**：改 `~/air/models.yaml`，保存后立即生效，不用重启后台。例如让文献阶段的大批量阅读用另一个模型：
+
+```yaml
+stages:
+  idea: {fast: gpt-mini}
+```
+
+- `fast` / `strong` 是“档位”：`fast` 用于大批量、便宜的调用，`strong` 用于写作、编码、核验。阶段代码里只写档位，不写具体模型名，所以换模型不用改代码。
+- 支持 Anthropic、OpenAI、本地模型（Ollama）等，写法见 `configs/models.yaml` 里的说明。使用本地模型或代理时，要把它的域名加到项目 `project.yaml` 的 `permissions.network.allow` 里（`localhost` 已默认允许）。
+
+**开发者：真实模型测试**（会产生几美分费用，CI 中不运行）：
+
+```bash
+AIR_REAL_LLM=1 pytest -q tests/test_llm_real.py
+```
+
+Windows 上先运行 `set AIR_REAL_LLM=1`，再运行 `pytest -q tests/test_llm_real.py`。测哪些模型由 `AIR_REAL_MODELS` 决定（默认 `claude-fast,gpt-mini`），缺 Key 的会自动跳过。
