@@ -88,3 +88,16 @@ def test_dev_check_sample_project():
 
     out = run("dev", "check", str(SAMPLE_PROJECT))
     assert "全部通过" in out
+
+
+def test_models_commands(server, air_home, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    out = run("models")
+    assert "claude-fast" in out and "未设置" in out and "ANTHROPIC_API_KEY" in out
+    r = runner.invoke(cli.app, ["models", "test", "claude-fast"])
+    assert r.exit_code == 1 and "ANTHROPIC_API_KEY" in r.output
+    out = run("models", "init")
+    assert (air_home / "models.yaml").exists() and (air_home / ".env").exists()
+    (air_home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-fake\n", encoding="utf-8")
+    out = run("models")
+    assert "已设置" in out and "sk-ant-fake" not in out

@@ -16,7 +16,7 @@ from airesearcher.core.workspace import repo_root
 
 from . import sse
 from .manager import ProjectManager
-from .routes import approvals, artifacts, paper, projects, runs
+from .routes import approvals, artifacts, models, paper, projects, runs
 
 
 def _error(code: str, message: str, status: int, detail: dict | None = None) -> JSONResponse:
@@ -52,7 +52,8 @@ def create_app(home: Path | None = None, start_engines: bool = True, engine_kwar
     def health() -> dict:
         return {"ok": True, "version": airesearcher.__version__, "projects": len(mgr.projects)}
 
-    for r in (projects.router, approvals.router, artifacts.router, runs.router, paper.router, sse.router):
+    for r in (projects.router, approvals.router, artifacts.router, runs.router, paper.router, models.router,
+              sse.router):
         app.include_router(r)
 
     dist = repo_root() / "web" / "dist"
