@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.2（2026-10-08：按主干骨架实现同步，改动汇总见附录 B）  
+**文档版本：** v0.3（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试。改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -89,7 +89,7 @@ airesearcher/
 │   ├── runs.py            # 实验：读取运行目录与汇总结果
 │   └── evidence.py        # 论文：evidence.check()、证据链组装
 ├── stages/fakes/          # v0.2：四个阶段的假实现（idea/plan/experiment/writing），格式与真实实现相同
-└── testing/               # 假实现：FakeLLM（v0.2 已有）；FakeExecutor、FakeLiterature、temp_project 待补
+└── testing/               # 假实现：FakeLLM；样例项目取用 sample.py（即 temp_project）；契约检查 contracts.py。FakeExecutor、FakeLiterature 待补
 ```
 
 依赖规则：`core` 不导入 `engine`、`stages`、`server`；`stages/*` 之间互不导入，需要别的阶段的数据时通过 `services/*` 读取；`services/*` 只依赖 `core`；`cli` 只通过 HTTP 调用 `server`（`air dev ...` 调试命令除外，见 8.2）。CI 用 `import-linter` 检查这几条。
@@ -278,7 +278,7 @@ class Answer(BaseModel):
 
 ### 3.8 工作区 git
 
-- 项目根目录 `git init`，`.gitignore` 只放行 `src/`、`configs/`。
+- 项目根目录 `git init`，只放行 `src/`、`configs/`（v0.3：规则写在 `.git/info/exclude` 而不是项目根目录的 `.gitignore`，这样项目目录放进别的 git 仓库——如样例项目——时不会干扰那个仓库）。
 - `workspace.commit(message, author="agent:<stage>") -> commit_sha`：仅当有变化时提交。【实验】的编码 Agent 每轮修改后调用；运行记录绑定该 commit。
 - 用户手工改 `src/` 后若未提交，`workspace.commit` 会以 `human-edited` 作者自动提交，保证每次运行都对应一个确定的 commit。
 
@@ -1066,7 +1066,7 @@ max_parallel: 1                     # GPU 串行；CPU 任务可设 2
 
 ## 13. 测试与 CI
 
-- `pytest` + GitHub Actions：每个 PR 跑单元测试、契约测试、`ruff`、`import-linter`；不调用真实 LLM（全部用 `FakeLLM`）。
+- `pytest` + GitHub Actions：每个 PR 跑单元测试、契约测试、`ruff`、`import-linter`；不调用真实 LLM（全部用 `FakeLLM`）。v0.3：测试在 macOS / Windows / Linux × Python 3.11 / 3.14 上各跑一遍（组里有人用 Windows），配置见 `.github/workflows/ci.yml`。
 - 冒烟测试 `tests/e2e/test_smoke.py`：用 `FakeLLM` + `tasks/smoke/` 跑完整状态机（含 auto-approve），每周集成时手动运行一次真实 LLM 版本。
 - 主干自己的重点单元测试：档案幂等与哈希（含目录型产物的 `exclude` 和 `paper/` 拷贝）、人工编辑检测、审批五步校验、问题的提问/回答/过期、状态转换表（逐行）、等待状态下的后台收集、检查点原子写、索引重建结果与文件一致。
 
@@ -1158,5 +1158,8 @@ air dev run-stage idea --workspace /tmp/ws --steps 3
 | 7 | skill 加载器为最小版本：`load()`、`instructions`、`path()`、`validate()`、`requires` 检查；`registry.yaml` 与 `air skills verify` 待做 |
 | 8.2 | 见上文 v0.2 约定；`air project rollback`、`air export`、`air cancel-run`、`air dev reindex` 尚未实现 |
 | 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`；SSE 为每秒轮询的简化版，只推 `state` 和 `event`（审批、问题、运行的变化都以 `event` 形式出现）；`/templates`、`/export`、`/runs/{id}/label`、`/runs/{id}/logs/stream` 尚未实现 |
-| 10.2 | 样例项目 `fixtures/sample_project/` 尚未制作；目前用假实现跑一遍流程生成的项目目录代替 |
+| 10.2 | v0.3：样例项目已提供，由 `fixtures/build_sample.py` 用假实现真实跑一遍生成（而不是手写），说明见 `fixtures/README.md`。与原表的差别：引擎不允许“有未决日志审批时提交手稿”，所以样例的状态是**日志已批准、手稿待审批**；工作区 `.git` 不随样例提交（`run.json` 中的 `code_commit` 因此无法检出） |
+| 10.3 | v0.3：`temp_project` 实现为 `airesearcher.testing.sample.copy_sample_project()` 和 pytest 夹具 `sample_project`；`FakeExecutor`、`FakeLiterature` 待补 |
+| 11 | v0.3：契约检查写在 `airesearcher/testing/contracts.py`（按提供方分组），契约测试在 `tests/contracts/`（每位提供方一个文件），组员可用 `air dev check <项目目录>` 自查 |
+| 跨平台 | v0.3：支持 Windows。项目锁在 Windows 上用 `msvcrt.locking`；进程管理统一用 `psutil`（新增依赖），不再用 `os.kill(pid, 0)`、`killpg`、`ps`、`resource`；所有文本文件读写显式使用 UTF-8；子进程设置 `PYTHONIOENCODING=utf-8`；Windows 上替换正被读取的文件会短暂失败，原子写和读取都带重试 |
 | 12 | 批量运行工具与 auto-approve 策略：引擎已有 `auto_approve_pending()`，`eval/batch.py` 待做 |
