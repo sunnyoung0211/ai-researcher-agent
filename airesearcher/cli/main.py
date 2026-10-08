@@ -513,7 +513,8 @@ def dev_run_stage(
                 if isinstance(t.result, Wait):
                     time.sleep(min(t.result.seconds, 5))
             elif after != before:
-                console.print(f"[bold]{i + 1}.[/] {before} → {after}")
+                why = f"（{escape(eng.ck.reason)}）" if eng.ck.reason else ""
+                console.print(f"[bold]{i + 1}.[/] {before} → {after}{why}")
             else:
                 console.print(f"[yellow]项目处于等待状态 {after}"
                               + (f"（{eng.ck.reason}）" if eng.ck.reason else "")

@@ -424,8 +424,8 @@ class ProjectEngine:
         return changed
 
     def _apply_decision(self, a: Approval) -> None:
+        # 注意：pending_approval 在状态转换之后才清空——API 以它为“引擎已处理”的信号
         ck = self.ck
-        ck.pending_approval = None
         kind, decision = a.kind, a.status
         if decision == "approved":
             ck.approved[kind] = a.target
@@ -448,7 +448,7 @@ class ProjectEngine:
         if nxt is None:  # idea/plan/manuscript 被拒绝：转 Paused 并提问 redo / end
             ck.rejected_approval = a.approval_id
             q = Question(
-                text=f"你拒绝了{label}（{a.target.artifact_id} v{a.target.version}）。接下来怎么做？",
+                text=f"你拒绝了「{label}」（{a.target.artifact_id} v{a.target.version}）。接下来怎么做？",
                 options=[
                     QuestionOption(id="redo", label="回到起草状态重写（会参考你的拒绝意见）"),
                     QuestionOption(id=END_OPTION_ID, label="结束项目"),
@@ -459,21 +459,24 @@ class ProjectEngine:
             ck.resume_to = DRAFTING_FOR_KIND[kind]
             ck.reason = f"{label}被拒绝，等待你选择重写还是结束"
             self._transition(S.Paused, ck.reason, actor="user")
+            ck.pending_approval = None
             return
         ck.feedback_approval_ids = [a.approval_id] if (decision != "approved" or kind == "log") else []
         self._transition(nxt, f"{label}审批结果：{decision}", actor="user")
+        ck.pending_approval = None
 
     def _apply_answer(self, rec: QuestionRecord) -> None:
         ck = self.ck
         ans, q = rec.answer, rec.question
         assert ans is not None
-        ck.pending_question = None
         if ck.state != S.Paused:
+            ck.pending_question = None
             return
         if ans.choice == END_OPTION_ID:
             ck.reason = "用户选择结束"
             ck.rejected_approval = None
             self._transition(S.Failed, "用户选择结束", actor="user")
+            ck.pending_question = None
             return
         if q.stage == "engine" and ck.rejected_approval:
             aid = ck.rejected_approval
@@ -486,6 +489,7 @@ class ProjectEngine:
             target = ck.resume_to or S.IdeaDrafting
         ck.resume_to = None
         self._transition(target, f"收到回答：{ans.choice or ans.text[:30]}", actor="user")
+        ck.pending_question = None
 
     def _mark_stale(self, artifact_id: str) -> None:
         if artifact_id not in self.ck.stale:
