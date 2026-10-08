@@ -74,7 +74,7 @@ class FakeExperimentStage:
         src = ctx.root / "src"
         if not any(src.glob("*.py")):  # 首次：把任务模板复制到 src/
             shutil.copytree(resolve_repo_path(task.template_dir), src, dirs_exist_ok=True)
-        tasks = [PlanTask.model_validate(t) for t in json.loads((ctx.root / TASKS).read_text())]
+        tasks = [PlanTask.model_validate(t) for t in json.loads((ctx.root / TASKS).read_text(encoding="utf-8"))]
         for t in tasks:
             p = ctx.root / "configs" / t.experiment_id / f"{t.task_key}.yaml"
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +140,7 @@ class FakeExperimentStage:
                 t["status"] = "failed"
                 s["failed_task"] = key
                 stderr = (ctx.executor.run_dir(rid) / "stderr.log")
-                tail = stderr.read_text(errors="replace")[-300:].strip() if stderr.exists() else ""
+                tail = stderr.read_text(errors="replace", encoding="utf-8")[-300:].strip() if stderr.exists() else ""
                 run_ref = ctx.archive.latest(f"runs/{rid}")
                 return Stop(
                     f"运行 {key} 失败（{st.failure_reason}）",
@@ -199,7 +199,7 @@ class FakeExperimentStage:
         rv = run_service.load_run(ctx.root, rid, with_metrics=False)
         import yaml
 
-        cfg = yaml.safe_load((ctx.executor.run_dir(rid) / "config.yaml").read_text())
+        cfg = yaml.safe_load((ctx.executor.run_dir(rid) / "config.yaml").read_text(encoding="utf-8"))
         return RunSpec(record=rv.record, run_dir=ctx.executor.run_dir(rid), config=cfg)
 
     # ------------------------------------------------------------------ Analyzing

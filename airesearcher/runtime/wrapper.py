@@ -2,7 +2,7 @@
 
 由 LocalExecutor.submit() 以新会话启动，脱离后台进程。它是 status.json 和 metrics.jsonl 的唯一写入者：
 1. 以 code/ 为工作目录、用 run.json 中的命令启动实验进程（新进程组），状态写为 running；
-2. 心跳线程每 AIR_HEARTBEAT_S 秒（默认 10）更新 heartbeat_at；
+2. 心跳线程每 AIR_HEARTBEAT_S 秒（默认 10）更新 heartbeat_at；监视线程约每秒采样一次 CPU 时间和内存（psutil）；
 3. 读实验进程 stdout：原样写 stdout.log；@@AIR_METRIC 行另外追加到 metrics.jsonl；stderr 写 stderr.log；
 4. 检查超时和 cancel_requested 文件；
 5. 进程结束：写 resources.json；按 5.4 判定结果；写 status.json 终态；
@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import resource
-import signal
 import subprocess
 import sys
 import threading
@@ -24,6 +22,13 @@ from pathlib import Path
 
 from airesearcher.core.fsutil import atomic_write_json, now, read_json
 from airesearcher.core.models.run import Resources, RunRecord, RunState, RunStatus
+
+from .procs import kill_tree, new_group_kwargs, tree_usage
+
+try:  # 只有 Mac / Linux 有；Windows 上用采样值
+    import resource
+except ImportError:  # pragma: no cover - Windows
+    resource = None  # type: ignore[assignment]
 
 METRIC_PREFIX = b"@@AIR_METRIC "
 
@@ -42,6 +47,8 @@ class Wrapper:
         self.metric_seq = 0
         self.metric_names: set[str] = set()
         self.heartbeat_s = float(os.environ.get("AIR_HEARTBEAT_S", "10"))
+        self.cpu_seen = 0.0  # 采样到的进程树 CPU 秒数（取最大值）
+        self.mem_peak = 0.0  # 采样到的内存峰值（MB）
 
     def write_status(self, **updates: object) -> None:
         with self.lock:
@@ -60,18 +67,16 @@ class Wrapper:
     def _kill(self) -> None:
         if self.proc is None or self.proc.poll() is not None:
             return
-        try:
-            os.killpg(self.proc.pid, signal.SIGTERM)
-            for _ in range(100):
-                if self.proc.poll() is not None:
-                    return
-                time.sleep(0.1)
-            os.killpg(self.proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        kill_tree(self.proc.pid, timeout=10)  # 先 terminate，10 秒后仍在则 kill（5.4）
 
     def _watchdog(self, t0: float) -> None:
+        last_sample = 0.0
         while self.proc is not None and self.proc.poll() is None:
+            if time.monotonic() - last_sample >= 1.0:
+                last_sample = time.monotonic()
+                cpu, mem = tree_usage(self.proc.pid)
+                self.cpu_seen = max(self.cpu_seen, cpu)
+                self.mem_peak = max(self.mem_peak, mem)
             if (self.d / "cancel_requested").exists():
                 self.cancelled = True
                 self._kill()
@@ -85,12 +90,12 @@ class Wrapper:
     def run(self) -> int:
         env = os.environ.copy()
         env.update({"PYTHONHASHSEED": "0", "AIR_RUN_ID": self.rec.run_id, "AIR_RUN_DIR": str(self.d),
-                    "PYTHONUNBUFFERED": "1"})
+                    "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"})  # Windows 默认不是 UTF-8
         t0 = time.monotonic()
         with open(self.d / "stdout.log", "ab") as out, open(self.d / "stderr.log", "ab") as err, \
                 open(self.d / "metrics.jsonl", "ab") as metrics:
             self.proc = subprocess.Popen(self.rec.command, cwd=self.d / "code", stdout=subprocess.PIPE, stderr=err,
-                                         stdin=subprocess.DEVNULL, env=env, start_new_session=True)
+                                         stdin=subprocess.DEVNULL, env=env, **new_group_kwargs())
             started = now()
             self.write_status(state=RunState.running, pid=self.proc.pid, pgid=self.proc.pid, started_at=started,
                               heartbeat_at=started)
@@ -103,10 +108,13 @@ class Wrapper:
                 if line.startswith(METRIC_PREFIX):
                     self._metric(line[len(METRIC_PREFIX):], metrics)
             rc = self.proc.wait()
-        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
-        rss = usage.ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024)
+        cpu, rss = self.cpu_seen, self.mem_peak
+        if resource is not None:  # Mac / Linux：用操作系统统计的精确值
+            usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+            cpu = usage.ru_utime + usage.ru_stime
+            rss = max(rss, usage.ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024))
         atomic_write_json(self.d / "resources.json", Resources(
-            wall_seconds=round(time.monotonic() - t0, 3), cpu_seconds=round(usage.ru_utime + usage.ru_stime, 3),
+            wall_seconds=round(time.monotonic() - t0, 3), cpu_seconds=round(cpu, 3),
             gpu_seconds=0.0, max_rss_mb=round(rss, 1)))
         self.write_status(**self._verdict(rc), ended_at=now(), exit_code=rc)
         return 0
@@ -130,7 +138,7 @@ class Wrapper:
         if self.timed_out:
             return {"state": RunState.failed, "failure_reason": "timeout"}
         if rc != 0:
-            stderr = (self.d / "stderr.log").read_text(errors="replace")[-4000:].lower()
+            stderr = (self.d / "stderr.log").read_text(encoding="utf-8", errors="replace")[-4000:].lower()
             oom = rc in (137, -9) or "out of memory" in stderr
             return {"state": RunState.failed, "failure_reason": "oom" if oom else "nonzero_exit"}
         missing = [m for m in self.rec.required_metrics if m not in self.metric_names]

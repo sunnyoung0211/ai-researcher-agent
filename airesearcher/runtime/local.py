@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import signal
 import subprocess
 import sys
 from datetime import timedelta
@@ -32,6 +31,7 @@ from airesearcher.core.models.run import (
 from airesearcher.core.project import Project
 
 from .executor import JobHandle, LogChunk, RunOutputs, RunSpec
+from .procs import detached_kwargs, kill_tree, pid_matches
 
 HEARTBEAT_STALE_S = 60
 ENV_WHITELIST = ("PYTHONHASHSEED", "OMP_NUM_THREADS", "AIR_DATA_DIR", "HF_HOME", "HF_HUB_OFFLINE")
@@ -47,33 +47,14 @@ def config_sha256(config: dict) -> str:
 
 
 def expand_entrypoint(task: TaskConfig, run_dir: Path, python: str, trial: bool = False) -> list[str]:
-    """把 task.yaml 的 entrypoint 占位符展开成实际命令（详细设计 3 第 3.2 节）。"""
-    values = {
-        "python": python, "config": str(run_dir / "config.yaml"), "out_dir": str(run_dir / "outputs"),
-        "data_dir": "",
-    }
+    """把 task.yaml 的 entrypoint 占位符展开成实际命令（详细设计 3 第 3.2 节）。
+
+    {config}、{out_dir} 写成相对 code/（实验进程的工作目录）的路径，这样项目目录整体移动、
+    或在另一台机器上复现时命令仍然有效。run_dir 参数保留，供以后需要绝对路径的占位符使用。
+    """
+    values = {"python": python, "config": "../config.yaml", "out_dir": "../outputs", "data_dir": ""}
     cmd = [part.format(**values) for part in task.entrypoint]
     return cmd + (list(task.trial_args) if trial else [])
-
-
-def _pid_matches(pid: int | None, run_id: str) -> bool:
-    """pid 存在，且其命令行中确实包含 run_id（避免 pid 被系统复用后误判）。"""
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    try:
-        out = subprocess.run(["ps", "-o", "stat=,command=", "-p", str(pid)], capture_output=True, text=True,
-                             timeout=5).stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        return True
-    if not out or out.split()[0].startswith("Z"):  # 僵尸进程视为已结束
-        return False
-    return run_id in out
 
 
 class LocalExecutor:
@@ -109,7 +90,8 @@ class LocalExecutor:
     def prepare(self, spec: RunSpec) -> None:
         rec = spec.record
         d = self.run_dir(rec.run_id)
-        self.project.permissions.guard("write", str(d), actor="executor")
+        # 用相对路径：权限事件日志里不出现本机目录
+        self.project.permissions.guard("write", f"runs/{rec.run_id}", actor="executor")
         d.mkdir(parents=True, exist_ok=True)
         (d / "outputs").mkdir(exist_ok=True)
         if not (d / "run.json").exists():  # run.json 创建后不再修改
@@ -132,12 +114,13 @@ class LocalExecutor:
         env = os.environ.copy()
         pkg_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        env["PYTHONIOENCODING"] = "utf-8"
         with open(d / "wrapper.log", "ab") as log:
-            # 包装器脱离后台进程（新会话），后台重启不影响它
+            # 包装器脱离后台进程（新会话 / Windows 上的独立进程组），后台重启不影响它
             p = subprocess.Popen(
                 [sys.executable, "-m", "airesearcher.runtime.wrapper", str(d)],
                 cwd=d, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
-                start_new_session=True,
+                **detached_kwargs(),
             )
         self._children = [c for c in self._children if c.poll() is None] + [p]
         return JobHandle(run_id=run_id, wrapper_pid=p.pid)
@@ -162,13 +145,10 @@ class LocalExecutor:
         st = self.status(run_id)
         if st.state in TERMINAL_RUN_STATES:
             return
-        (d / "cancel_requested").write_text(now().isoformat())
-        # 包装器已经不在时，由执行器直接终止（只杀命令行含 run_id 的进程组）
-        if not _pid_matches(st.wrapper_pid, run_id) and _pid_matches(st.pid, run_id) and st.pgid:
-            try:
-                os.killpg(st.pgid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+        (d / "cancel_requested").write_text(now().isoformat(), encoding="utf-8")
+        # 包装器已经不在时，由执行器直接终止（只结束命令行含 run_id 的进程及其子进程）
+        if not pid_matches(st.wrapper_pid, run_id) and pid_matches(st.pid, run_id) and st.pid:
+            kill_tree(st.pid)
 
     def collect(self, run_id: str) -> RunOutputs:
         """已结束的运行：登记档案（只记清单）、按 resources.json 记 CPU/GPU 时间。可重复调用。"""
@@ -176,7 +156,7 @@ class LocalExecutor:
         d = self.run_dir(run_id)
         res = Resources.model_validate(read_json(d / "resources.json")) if (d / "resources.json").exists() else None
         mpath = d / "metrics.jsonl"
-        lines = mpath.read_text().splitlines() if mpath.exists() else []
+        lines = mpath.read_text(encoding="utf-8").splitlines() if mpath.exists() else []
         metrics = [MetricRecord.model_validate(json.loads(line)) for line in lines if line.strip()]
         if st.state in TERMINAL_RUN_STATES and self.project.archive.latest(f"runs/{run_id}") is None:
             self.project.archive.put(f"runs/{run_id}", "run", d, producer="agent:experiment/executor",
@@ -204,7 +184,7 @@ class LocalExecutor:
                 self._write_status(st)
             return st
         if st.state == RunState.running:
-            alive = _pid_matches(st.pid, run_id) or _pid_matches(st.wrapper_pid, run_id)
+            alive = pid_matches(st.pid, run_id) or pid_matches(st.wrapper_pid, run_id)
             if not alive:
                 st = st.model_copy(update={"state": RunState.failed, "failure_reason": "lost", "ended_at": now()})
                 self._write_status(st)

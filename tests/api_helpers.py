@@ -29,3 +29,14 @@ def decide(c, pid, decision="approved", comment="", request_id=None, sha=None):
     body = {"decision": decision, "comment": comment, "expected_sha256": sha or a["target"]["sha256"],
             "request_id": request_id or str(uuid.uuid4())}
     return a["approval_id"], c.post(f"/api/projects/{pid}/approvals/{a['approval_id']}/decision", json=body)
+
+
+def wait_until(c, pid, predicate, timeout=60, what="condition"):
+    """轮询项目状态，直到 predicate(status) 为真。"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        st = c.get(f"/api/projects/{pid}").json()
+        if predicate(st):
+            return st
+        time.sleep(0.1)
+    raise AssertionError(f"timeout waiting for {what}; last={st['state']} {st['blocking_reason']}")

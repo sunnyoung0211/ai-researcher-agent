@@ -12,27 +12,43 @@
 
 ## 1. 安装（只需做一次）
 
-需要 Python 3.11 或更新版本。在仓库根目录打开终端：
+Mac 和 Windows 都可以。推荐用 **conda**（Anaconda 或 Miniconda）管理 Python，两个系统的命令完全一样。
+
+- **Windows**：打开“Anaconda Prompt”（开始菜单里搜索），下面所有命令都在这里输入；
+- **Mac**：打开“终端”。
+
+先进入仓库目录（把路径换成你电脑上的位置），例如：
 
 ```bash
-python3 -m venv .venv
+cd Desktop/ai-researcher-agent
 ```
 
+创建一个名为 `air` 的 Python 环境（只需一次）：
+
 ```bash
-source .venv/bin/activate
+conda create -n air python=3.12 -y
 ```
+
+进入这个环境：
+
+```bash
+conda activate air
+```
+
+安装本项目：
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-- 以后每次新开终端，都要先运行一次 `source .venv/bin/activate`（命令行前面会出现 `(.venv)`）。
+- 以后每次新开窗口，都要先运行一次 `conda activate air`（命令行前面会出现 `(air)`）。
+- 不用 conda 也可以：任何 Python 3.11 以上的虚拟环境（如 `python -m venv .venv`）都行。
 - 以后要真实调用大模型时，再运行 `pip install -e ".[llm]"` 并设置 `ANTHROPIC_API_KEY`。**用假实现跑流程不需要任何 API Key。**
-- 有 MacTeX / TeX Live（带 `latexmk`）时会真的编译出论文 PDF；没有也能跑完，只是生成一个占位 PDF。
+- 有 MacTeX / TeX Live / MiKTeX（带 `latexmk`）时会真的编译出论文 PDF；没有也能跑完，只是生成一个占位 PDF。
 
 ## 2. 跑通一遍完整流程（约 3 分钟，不需要 API Key）
 
-需要**两个终端窗口**，两个都先运行 `source .venv/bin/activate`。
+需要**两个终端窗口**（Windows 上是两个 Anaconda Prompt），两个都先运行 `conda activate air`。
 
 **终端 1：启动后台**（保持这个窗口开着，不要关）
 
@@ -218,6 +234,17 @@ air dev run-stage idea --workspace /tmp/ws --steps 5
 
 每一步会打印阶段返回了什么（`Continue` / `NeedsApproval` / ……）。遇到审批可以加 `--auto-approve` 自动批准。
 
+6. **自查格式**：检查你的阶段写出的文件是否符合约定（“契约”）：
+
+```bash
+air dev check /tmp/ws
+```
+
+全部显示 ✓ 才算对接得上。只看自己负责的部分可以加 `--owner 文献`（或 `实验`、`论文`）。
+
+7. **样例项目** `fixtures/sample_project/` 是一个完整跑完的项目（含失败运行、试运行、故意写错的论断等），
+   开发时可以直接拿它当输入，说明见 [`fixtures/README.md`](fixtures/README.md)。
+
 ## 6. 哪些是真的，哪些是假的
 
 | 部分 | 状态 |
@@ -235,9 +262,10 @@ air dev run-stage idea --workspace /tmp/ws --steps 5
 ## 7. 常见问题
 
 - **“连不上后台”**：终端 1 的 `air serve` 没开，或者被关掉了。重新运行 `air serve`。
-- **端口被占用**：`air serve --port 8766`，然后在终端 2 先运行 `export AIR_SERVER=http://127.0.0.1:8766`。
+- **端口被占用**：`air serve --port 8766`，然后在终端 2 先告诉命令行新地址：Mac 上运行 `export AIR_SERVER=http://127.0.0.1:8766`，Windows（Anaconda Prompt）上运行 `set AIR_SERVER=http://127.0.0.1:8766`。
 - **关掉后台再打开会怎样？** 项目从上次的位置继续；正在跑的实验不受影响（它们是独立进程），重启后会自动核对状态。
-- **`air: command not found`**：先 `source .venv/bin/activate`。
+- **`air: command not found` / “air 不是内部或外部命令”**：先 `conda activate air`。
+- **Windows 上中文显示成乱码**：用 Windows Terminal 或 Anaconda Prompt；文件本身都是 UTF-8 编码，用 VS Code 打开即可正常显示。
 
 ## 8. 开发者
 
@@ -248,6 +276,17 @@ pytest -q
 ```bash
 ruff check .
 ```
+
+```bash
+lint-imports
+```
+
+`lint-imports` 检查模块之间的依赖规则（例如各阶段之间不能互相导入，见详细设计 1 第 2 节）。
+
+**自动检查（CI）：** 每个 PR 都会在 GitHub 上自动跑上面三项检查，并且在 Mac、Windows、Linux 三个系统上各跑一遍测试。
+结果显示在 PR 页面底部：全部绿色 ✓ 才能合并；有红色 ✗ 时点进去看哪一项失败，修好后再推送，检查会自动重跑。
+
+**契约测试** 在 `tests/contracts/`，说明见那里的 README：每位组员负责自己提供的交接文件格式。
 
 测试包括：从创建到完成的端到端流程（引擎、HTTP、CLI 三种方式）、审批去重与过期（409）、提问与回答、
 审批待处理时重启、运行进行中重启、后台停机期间运行结束、档案版本（含 `paper/` 目录）、引擎转换表。

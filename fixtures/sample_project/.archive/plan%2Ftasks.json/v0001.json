@@ -1,0 +1,146 @@
+[
+  {
+    "task_key": "E1-seed=0",
+    "experiment_id": "E1",
+    "kind": "baseline",
+    "config": {
+      "method": "baseline",
+      "seconds": 1.0,
+      "seed": 0,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E1-seed=1",
+    "experiment_id": "E1",
+    "kind": "baseline",
+    "config": {
+      "method": "baseline",
+      "seconds": 1.0,
+      "seed": 1,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E1-seed=2",
+    "experiment_id": "E1",
+    "kind": "baseline",
+    "config": {
+      "method": "baseline",
+      "seconds": 1.0,
+      "seed": 2,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E2-seed=0",
+    "experiment_id": "E2",
+    "kind": "main",
+    "config": {
+      "method": "main",
+      "seconds": 1.0,
+      "seed": 0,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E2-seed=1",
+    "experiment_id": "E2",
+    "kind": "main",
+    "config": {
+      "method": "main",
+      "seconds": 1.0,
+      "seed": 1,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E2-seed=2",
+    "experiment_id": "E2",
+    "kind": "main",
+    "config": {
+      "method": "main",
+      "seconds": 1.0,
+      "seed": 2,
+      "fail_mode": "exit1"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E3-seed=0",
+    "experiment_id": "E3",
+    "kind": "ablation",
+    "config": {
+      "method": "ablation",
+      "seconds": 1.0,
+      "seed": 0,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E3-seed=1",
+    "experiment_id": "E3",
+    "kind": "ablation",
+    "config": {
+      "method": "ablation",
+      "seconds": 1.0,
+      "seed": 1,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  },
+  {
+    "task_key": "E3-seed=2",
+    "experiment_id": "E3",
+    "kind": "ablation",
+    "config": {
+      "method": "ablation",
+      "seconds": 1.0,
+      "seed": 2,
+      "fail_mode": "none"
+    },
+    "eval_condition": "final",
+    "depends_on": [],
+    "expected_metrics": [
+      "score"
+    ]
+  }
+]

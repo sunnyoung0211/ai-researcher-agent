@@ -1,0 +1,40 @@
+{
+  "approval_id": "ap-0006",
+  "kind": "manuscript",
+  "target": {
+    "artifact_id": "paper",
+    "version": 2,
+    "sha256": "6100b6d853ff0d83add830abe39002c633e50dfc65e53f29b628f9fdb1f6197a"
+  },
+  "previous": null,
+  "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
+  "impact": "批准后项目标记为完成；有 blocker 时批准必须填写意见",
+  "extra_refs": [
+    {
+      "artifact_id": "paper/review/review_v2.json",
+      "version": 1,
+      "sha256": "707f9df2c39cdc964d3ea43afbc1295b5938dd069f1088c5fb8c627a6d686918"
+    },
+    {
+      "artifact_id": "paper/build/compile_report.json",
+      "version": 2,
+      "sha256": "c53b40f8884eced817304e1912dde0d60ba509d5f333947a680361b70a000fec"
+    },
+    {
+      "artifact_id": "paper/claims.jsonl",
+      "version": 2,
+      "sha256": "e98fb5aeceb957f1a7059b2450f29cbebad9c7fce68c7284c067dc058143b455"
+    },
+    {
+      "artifact_id": "paper/build/main.pdf",
+      "version": 2,
+      "sha256": "efd2728d02763370c55083dd90470a34a2b8182c221cc2edbff25b626e93ff96"
+    }
+  ],
+  "status": "pending",
+  "created_at": "2026-10-08T20:38:06.611200+08:00",
+  "decided_at": null,
+  "decision_comment": "",
+  "decided_by": null,
+  "request_ids": []
+}

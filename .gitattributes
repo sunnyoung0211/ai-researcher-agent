@@ -1,0 +1,3 @@
+# 样例项目里的文件按原样保存，不做换行符转换（Windows 上 git 默认会把 LF 改成 CRLF，
+# 那样文件内容变了，存档里记录的 sha256 就对不上了）。
+fixtures/sample_project/** -text

@@ -30,7 +30,7 @@ def _is_append_only(artifact_id: str) -> bool:
 
 def _excluded(rel: str, patterns: list[str]) -> bool:
     for pat in patterns:
-        if fnmatch.fnmatch(rel, pat):
+        if fnmatch.fnmatchcase(rel, pat):  # 区分大小写，Mac / Windows 行为一致
             return True
         if pat.endswith("/**") and (rel == pat[:-3] or rel.startswith(pat[:-2])):
             return True

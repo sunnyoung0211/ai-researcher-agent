@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
+import tarfile
 import threading
 from pathlib import Path
 
@@ -15,8 +17,9 @@ PROJECT_SUBDIRS = [
     "artifacts", "paper", "logs", ".archive", ".state/checkpoints", ".llm",
 ]
 
-# 工作区 git 只跟踪 src/ 和 configs/
-GITIGNORE = "/*\n!/.gitignore\n!/src/\n!/configs/\n"
+# 工作区 git 只跟踪 src/ 和 configs/。规则写在 .git/info/exclude（而不是项目根目录的 .gitignore），
+# 这样把项目目录复制进别的 git 仓库（如 fixtures/sample_project/）时不会影响那个仓库。
+GIT_EXCLUDE = "/*\n!/src/\n!/configs/\n"
 
 _REGISTRY_LOCK = threading.Lock()
 
@@ -91,18 +94,21 @@ class Workspace:
             "git", "-c", f"user.name={name}", "-c", "user.email=air@localhost", "-c", "commit.gpgsign=false",
             *args,
         ]
-        return subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, check=check)
+        return subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", check=check)
 
     def init_git(self) -> None:
         if not self.has_git:
             return
-        (self.root / ".gitignore").write_text(GITIGNORE)
         for d in ("src", "configs"):
             keep = self.root / d / ".gitkeep"
             keep.parent.mkdir(parents=True, exist_ok=True)
             keep.touch()
         if not (self.root / ".git").exists():
             self._git("init", "-q")
+        exclude = self.root / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        exclude.write_text(GIT_EXCLUDE, encoding="utf-8")
         self.commit("初始化工作区", author="system")
 
     def head(self) -> str | None:
@@ -141,4 +147,6 @@ class Workspace:
         archive = subprocess.run(
             ["git", "archive", "--format=tar", f"{commit}:src"], cwd=self.root, capture_output=True, check=True
         )
-        subprocess.run(["tar", "-x", "-C", str(dest)], input=archive.stdout, check=True)
+        # 用 Python 自带的 tarfile 解包（Windows 上不一定有 tar 命令）
+        with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tf:
+            tf.extractall(dest, filter="data")

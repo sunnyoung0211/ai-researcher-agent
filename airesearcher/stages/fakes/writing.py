@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 from airesearcher.core.fsutil import atomic_write_text, dumps, now, sha256_bytes
 from airesearcher.core.models.aggregate import Aggregate
@@ -95,6 +96,46 @@ def minimal_pdf(lines: list[str]) -> bytes:
     return out
 
 
+def compile_paper(paper: Path, enabled: bool = True) -> CompileReport:
+    """编译 paper/main.tex（7.4）。没有 latexmk 或 enabled=False 时写占位 PDF，并在报告中说明。"""
+    build = paper / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    t0 = time.monotonic()
+    latexmk = shutil.which("latexmk")
+    if enabled and latexmk:
+        env = {**os.environ, "openin_any": "p", "openout_any": "p"}
+        try:
+            r = subprocess.run([latexmk, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
+                                "-no-shell-escape", "-outdir=build", "main.tex"], cwd=paper, env=env,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=180)
+            ok = r.returncode == 0 and (build / "main.pdf").exists()
+            main_log = build / "main.log"
+            log = main_log.read_text(encoding="utf-8", errors="replace") if main_log.exists() else ""
+            errors = [{"file": "main.tex", "line": None, "message": ln} for ln in log.splitlines()
+                      if ln.startswith("!")][:20]
+            undefined = sorted(set(re.findall(r"Citation `([^']+)' .*undefined", log)))
+            pages = re.search(r"Output written on .*\((\d+) page", log)
+            return CompileReport(ok=ok, engine="latexmk -pdf", entry="main.tex", errors=errors,
+                                 undefined_citations=undefined, log_path="paper/build/main.log",
+                                 pages=int(pages.group(1)) if pages else None,
+                                 seconds=round(time.monotonic() - t0, 2))
+        except subprocess.TimeoutExpired:
+            pass
+    reason = "latexmk 不可用" if not latexmk else "dev.compile=false 或编译超时"
+    text = ["AI Researcher Agent - placeholder PDF", f"({reason}; LaTeX sources are in paper/)", ""]
+    for name in ("abstract", "results", "conclusion"):
+        p = paper / "sections" / f"{name}.tex"
+        if p.exists():
+            body = [ln for ln in p.read_text(encoding="utf-8").splitlines() if not ln.startswith("%")]
+            text += [f"[{name}]", *body[:12], ""]
+    (build / "main.pdf").write_bytes(minimal_pdf(text))
+    (build / "main.md").write_text("\n".join(text) + "\n", encoding="utf-8")
+    return CompileReport(ok=False, engine="placeholder", entry="main.tex",
+                         errors=[{"file": "main.tex", "line": None, "message": f"{reason}：生成了占位 PDF"}],
+                         log_path="paper/build/main.md", seconds=round(time.monotonic() - t0, 2))
+
+
 # ---------------------------------------------------------------- 阶段
 class FakeWritingStage:
     name = "writing"
@@ -132,9 +173,9 @@ class FakeWritingStage:
 
         ctx.progress("论文（假实现）：等待审批", 4, 4, "steps")
         r = s["refs"]
-        report = json.loads((ctx.root / r["review_path"]).read_text())
+        report = json.loads((ctx.root / r["review_path"]).read_text(encoding="utf-8"))
         counts = report["counts"]
-        ok = json.loads((ctx.root / "paper/build/compile_report.json").read_text())["ok"]
+        ok = json.loads((ctx.root / "paper/build/compile_report.json").read_text(encoding="utf-8"))["ok"]
         paper_ref = VersionRef(**s["paper_ref"])
         return NeedsApproval(
             target=paper_ref, kind="manuscript",
@@ -155,7 +196,7 @@ class FakeWritingStage:
         out = []
         for v in ctx.archive.list_latest("aggregate"):
             if v.path.endswith(".json") and not v.path.endswith("/all.json"):
-                out.append(Aggregate.model_validate_json((ctx.root / v.path).read_text()))
+                out.append(Aggregate.model_validate_json((ctx.root / v.path).read_text(encoding="utf-8")))
         return out
 
     # ------------------------------------------------------------ 1 证据包与图表
@@ -189,17 +230,17 @@ class FakeWritingStage:
             rows = [{"label": _gkey(r.group), "mean": r.mean * 100,
                      "lo": r.ci95[0] * 100 if r.ci95 else None, "hi": r.ci95[1] * 100 if r.ci95 else None,
                      "n": r.n} for r in agg.rows]
-            (d / "spec.json").write_text(spec.model_dump_json(indent=2))
+            (d / "spec.json").write_text(spec.model_dump_json(indent=2), encoding="utf-8")
             (d / "data.csv").write_text("label,mean,ci95_low,ci95_high,n\n" + "".join(
-                f"{r['label']},{r['mean']:.4f},{r['lo']},{r['hi']},{r['n']}\n" for r in rows))
-            (d / f"{fid}.svg").write_text(svg_bar_chart(rows, spec.title, spec.ylabel))
+                f"{r['label']},{r['mean']:.4f},{r['lo']},{r['hi']},{r['n']}\n" for r in rows), encoding="utf-8")
+            (d / f"{fid}.svg").write_text(svg_bar_chart(rows, spec.title, spec.ylabel), encoding="utf-8")
             agg_ref = ctx.archive.latest(f"artifacts/aggregates/{agg.aggregate_id}.json")
             fig = Figure(fig_id=fid, spec=spec, aggregate_ref=agg_ref,
                          run_ids=[x for r in agg.rows for x in r.run_ids], skill_ref="fake-plotting@0",
                          script_sha256=sha256_bytes(inspect.getsource(svg_bar_chart).encode()),
                          outputs=[f"artifacts/figures/{fid}/{fid}.svg"],
                          n_per_group={_gkey(r.group): r.n for r in agg.rows}, created_at=now())
-            (d / "figure.json").write_text(fig.model_dump_json(indent=2))
+            (d / "figure.json").write_text(fig.model_dump_json(indent=2), encoding="utf-8")
             fig_refs.append(ctx.archive.put(f"artifacts/figures/{fid}", "figure", d, parents=[agg_ref],
                                             producer="agent:writing/figures"))
         s["fig_refs"] = [r.model_dump(mode="json") for r in fig_refs]
@@ -265,9 +306,9 @@ class FakeWritingStage:
               "\\newcommand{\\airval}[1]{\\@ifundefined{airval@#1}{\\textbf{??#1??}}{\\@nameuse{airval@#1}}}",
               "\\makeatother"]
         av += [f"\\expandafter\\def\\csname airval@{k}\\endcsname{{{v}}}" for k, v in sorted(macros.items())]
-        (paper / "air_values.tex").write_text("\n".join(av) + "\n")
-        (paper / "claims.jsonl").write_text("".join(c.model_dump_json() + "\n" for c in claims))
-        (paper / "references.bib").write_text(literature.bibtex_for(ctx.root, cited))
+        (paper / "air_values.tex").write_text("\n".join(av) + "\n", encoding="utf-8")
+        (paper / "claims.jsonl").write_text("".join(c.model_dump_json() + "\n" for c in claims), encoding="utf-8")
+        (paper / "references.bib").write_text(literature.bibtex_for(ctx.root, cited), encoding="utf-8")
 
         title = _tex_escape(ctx.project.title) if ctx.project.title.isascii() else "AI Researcher Draft"
         notes = s.get("notes", [])
@@ -284,7 +325,7 @@ class FakeWritingStage:
                                             if notes else ""),
         }
         for name, body in sec.items():
-            (paper / "sections" / f"{name}.tex").write_text(f"% {name}\n{body}\n")
+            (paper / "sections" / f"{name}.tex").write_text(f"% {name}\n{body}\n", encoding="utf-8")
         main = [
             "\\documentclass{article}", "\\usepackage[T1]{fontenc}", "\\usepackage{url}",
             "\\newcommand{\\claim}[2]{#2}", "\\input{air_values}",
@@ -297,49 +338,16 @@ class FakeWritingStage:
             "\\section{Conclusion}", "\\input{sections/conclusion}",
             "\\bibliographystyle{plain}", "\\bibliography{references}", "\\end{document}",
         ]
-        (paper / "main.tex").write_text("\n".join(main) + "\n")
+        (paper / "main.tex").write_text("\n".join(main) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------ 3 编译、登记、核验
     def _compile(self, ctx: StageContext) -> CompileReport:
-        paper = ctx.root / "paper"
-        build = paper / "build"
-        build.mkdir(parents=True, exist_ok=True)
-        t0 = time.monotonic()
-        latexmk = shutil.which("latexmk")
-        if ctx.project.dev.compile and latexmk:
-            env = {**os.environ, "openin_any": "p", "openout_any": "p"}
-            try:
-                r = subprocess.run([latexmk, "-pdf", "-interaction=nonstopmode", "-halt-on-error",
-                                    "-no-shell-escape", "-outdir=build", "main.tex"], cwd=paper, env=env,
-                                   capture_output=True, text=True, timeout=180)
-                ok = r.returncode == 0 and (build / "main.pdf").exists()
-                log = (build / "main.log").read_text(errors="replace") if (build / "main.log").exists() else ""
-                errors = [{"file": "main.tex", "line": None, "message": ln} for ln in log.splitlines()
-                          if ln.startswith("!")][:20]
-                undefined = sorted(set(re.findall(r"Citation `([^']+)' .*undefined", log)))
-                pages = re.search(r"Output written on .*\((\d+) page", log)
-                return CompileReport(ok=ok, engine="latexmk -pdf", entry="main.tex", errors=errors,
-                                     undefined_citations=undefined, log_path="paper/build/main.log",
-                                     pages=int(pages.group(1)) if pages else None,
-                                     seconds=round(time.monotonic() - t0, 2))
-            except subprocess.TimeoutExpired:
-                pass
-        reason = "latexmk 不可用" if not latexmk else "dev.compile=false 或编译超时"
-        text = ["AI Researcher Agent - placeholder PDF", f"({reason}; LaTeX sources are in paper/)", ""]
-        for name in ("abstract", "results", "conclusion"):
-            p = paper / "sections" / f"{name}.tex"
-            if p.exists():
-                text += [f"[{name}]", *[ln for ln in p.read_text().splitlines() if not ln.startswith("%")][:12], ""]
-        (build / "main.pdf").write_bytes(minimal_pdf(text))
-        (build / "main.md").write_text("\n".join(text) + "\n")
-        return CompileReport(ok=False, engine="placeholder", entry="main.tex",
-                             errors=[{"file": "main.tex", "line": None, "message": f"{reason}：生成了占位 PDF"}],
-                             log_path="paper/build/main.md", seconds=round(time.monotonic() - t0, 2))
+        return compile_paper(ctx.root / "paper", enabled=ctx.project.dev.compile)
 
     def _compile_register_review(self, ctx: StageContext, s: dict) -> None:
         paper = ctx.root / "paper"
         report = self._compile(ctx)
-        (paper / "build" / "compile_report.json").write_text(report.model_dump_json(indent=2))
+        (paper / "build" / "compile_report.json").write_text(report.model_dump_json(indent=2), encoding="utf-8")
         agg_refs = [v.ref for v in ctx.archive.list_latest("aggregate") if v.path.endswith(".json")]
         fig_refs = [VersionRef(**r) for r in s.get("fig_refs", [])]
         paper_ref = ctx.archive.put("paper", "paper", paper, exclude=PAPER_EXCLUDE,
@@ -357,13 +365,13 @@ class FakeWritingStage:
         review_dir.mkdir(parents=True, exist_ok=True)
         n = len(list(review_dir.glob("review_v*.json"))) + 1
         rp = review_dir / f"review_v{n}.json"
-        rp.write_text(check.model_dump_json(indent=2))
+        rp.write_text(check.model_dump_json(indent=2), encoding="utf-8")
         md = [f"# 核验报告 v{n}（确定性检查，假实现阶段）", "", f"- 论文版本：paper v{paper_ref.version}",
               f"- 统计：{check.counts}", f"- 编译：{'成功' if check.compile_ok else '未成功'}", ""]
         for c in check.claims:
             md.append(f"- {c.claim_id}：{c.support}" + "".join(f"；{i.code}（{i.detail}）" for i in c.issues))
         md += [f"- {i.code}：{i.detail}" for i in check.unbound_issues]
-        (review_dir / f"review_v{n}.md").write_text("\n".join(md) + "\n")
+        (review_dir / f"review_v{n}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
         review_ref = ctx.archive.put(f"paper/review/review_v{n}.json", "review_report", rp, parents=[paper_ref],
                                      producer="agent:writing/review")
         s["paper_ref"] = paper_ref.model_dump(mode="json")

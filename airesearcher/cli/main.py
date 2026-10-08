@@ -467,12 +467,26 @@ def dev_new_workspace(
     if path.exists() and any(path.iterdir()):
         fail(f"{path} 已存在且不为空")
     if from_:
-        shutil.copytree(from_, path, dirs_exist_ok=True)
+        shutil.copytree(from_, path, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".gitignore"))
         console.print(f"[green]✓ 已从 {from_} 复制到 {path}[/]")
         return
     dev = {"stage_impl": _parse_impl(impl)} if impl else {}
     p = Project.create(goal=idea, task=task, root=path, register=False, dev=dev)
     console.print(f"[green]✓ 已创建工作区 {p.root}（项目 {p.project_id}）[/]")
+
+
+@dev_app.command("check")
+def dev_check(
+    workspace: Path = typer.Argument(..., help="项目目录（如 ~/air/projects/p-xxx 或 fixtures/sample_project）"),
+    owner: list[str] = typer.Option(None, "--owner", help="只检查某位提供方：主干 / 文献 / 实验 / 论文"),
+):
+    """契约检查：项目里的交接文件是否符合约定的格式（详细设计 1 第 11 节）。"""
+    from airesearcher.testing.contracts import check_project
+
+    report = check_project(workspace, owners=owner or None)
+    console.print(escape(report.text()))
+    if not report.ok:
+        raise typer.Exit(1)
 
 
 @dev_app.command("run-stage")

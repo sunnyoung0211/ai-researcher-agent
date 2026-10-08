@@ -77,7 +77,7 @@ def artifact_lineage(pid: str, artifact_id: str, version: int | None = None,
 def edit_artifact(pid: str, body: EditRequest, m: ProjectManager = Depends(manager)) -> dict:
     p = m.get(pid)
     aid = body.artifact_id.strip("/")
-    if not any(fnmatch.fnmatch(aid, pat) for pat in EDITABLE):
+    if not any(fnmatch.fnmatchcase(aid, pat) for pat in EDITABLE):
         raise PermissionDenied(f"{aid} 不允许在线编辑（可编辑：{', '.join(EDITABLE)}）")
     path = p.archive.path_of(aid)
     current = sha256_file(path) if path.exists() else ""

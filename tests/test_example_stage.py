@@ -18,17 +18,17 @@ def test_generate_reject_revise_approve(air_home):
     eng = _engine(p, {"example/summarize": [{"title": "初版标题", "points": ["a"]},
                                             {"title": "修改后标题", "points": ["b"]}]})
     drive(eng, S.IdeaPending)
-    assert "初版标题" in (p.root / "example/summary.md").read_text()
+    assert "初版标题" in (p.root / "example/summary.md").read_text(encoding="utf-8")
     approve_pending(p, "changes_requested", "标题再具体一点")
     drive(eng, S.IdeaPending)
-    text = (p.root / "example/summary.md").read_text()
+    text = (p.root / "example/summary.md").read_text(encoding="utf-8")
     assert "修改后标题" in text
     v2 = p.archive.latest_version("example/summary.md")
     assert v2.ref.version == 2 and v2.note == "标题再具体一点"
     approve_pending(p)
     drive(eng, S.PlanDrafting)
     assert eng.ck.approved["idea"].version == 2
-    calls = [line for line in (p.root / ".llm/calls.jsonl").read_text().splitlines() if line]
+    calls = [line for line in (p.root / ".llm/calls.jsonl").read_text(encoding="utf-8").splitlines() if line]
     assert len(calls) == 2
 
 
@@ -40,5 +40,5 @@ def test_question_then_answer(air_home):
     assert q is not None and q.allow_text and not q.options
     p.questions.answer(q.question_id, None, "想比较 LoRA 和全量微调在 SST-2 上的准确率", request_id="ans-1")
     drive(eng, S.IdeaPending)
-    assert "LoRA" in (p.root / "example/summary.md").read_text()
+    assert "LoRA" in (p.root / "example/summary.md").read_text(encoding="utf-8")
     assert eng.ck.answer is None  # 回答只交给阶段一次

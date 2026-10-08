@@ -1,0 +1,97 @@
+{
+  "paper_ref": {
+    "artifact_id": "paper",
+    "version": 2,
+    "sha256": "6100b6d853ff0d83add830abe39002c633e50dfc65e53f29b628f9fdb1f6197a"
+  },
+  "mode": "full",
+  "claims": [
+    {
+      "claim_id": "CL1",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C1.main.score.mean": "78.0",
+        "C1.baseline.score.mean": "69.4"
+      }
+    },
+    {
+      "claim_id": "CL2",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C1.main-vs-baseline.score.diff_mean": "8.6"
+      }
+    },
+    {
+      "claim_id": "CL3",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C2.main.score.mean": "78.0",
+        "C2.ablation.score.mean": "73.7"
+      }
+    },
+    {
+      "claim_id": "CL4",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {
+        "C2.main-vs-ablation.score.diff_mean": "4.3"
+      }
+    },
+    {
+      "claim_id": "CL5",
+      "support": "supported",
+      "issues": [],
+      "recomputed": {}
+    },
+    {
+      "claim_id": "CL6",
+      "support": "unsupported",
+      "issues": [
+        {
+          "code": "NUM_MISMATCH",
+          "severity": "blocker",
+          "claim_id": "CL6",
+          "location": {},
+          "sentence": "\\claim{CL6}{The best single run of main reaches \\airval{C1.main.score.max}\\%.}",
+          "detail": "文中 95.0，重算为 78.9（C1.main.score.max）",
+          "suggestion": ""
+        }
+      ],
+      "recomputed": {
+        "C1.main.score.max": "78.9"
+      }
+    },
+    {
+      "claim_id": "CL7",
+      "support": "contradicted",
+      "issues": [
+        {
+          "code": "CONTRADICTED",
+          "severity": "blocker",
+          "claim_id": "CL7",
+          "location": {},
+          "sentence": "\\claim{CL7}{Overall, main performs worse than baseline.}",
+          "detail": "论断 a<b，但均值差为 +0.0857",
+          "suggestion": ""
+        }
+      ],
+      "recomputed": {
+        "C1.main-vs-baseline.score.diff_mean": "8.6"
+      }
+    }
+  ],
+  "unbound_issues": [],
+  "counts": {
+    "blocker": 2,
+    "major": 0,
+    "minor": 0,
+    "supported": 5,
+    "unsupported": 1,
+    "contradicted": 1
+  },
+  "compile_ok": true,
+  "created_at": "2026-10-08T20:38:06.610094+08:00"
+}

@@ -1,0 +1,3 @@
+method,metric,n,mean,std,ci95_low,ci95_high,min,max
+ablation,score,3,0.7371,0.017632,0.6933,0.7809,0.7256,0.7574
+main,score,3,0.7799,0.008643,0.758428,0.801372,0.7725,0.7894

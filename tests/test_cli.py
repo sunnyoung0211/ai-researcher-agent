@@ -81,3 +81,10 @@ def test_dev_commands(tmp_path):
     out = run("dev", "run-stage", "example", "--workspace", str(ws), "--steps", "2", "--fake-llm",
               "--auto-approve")
     assert "自动批准" in out
+
+
+def test_dev_check_sample_project():
+    from airesearcher.testing.sample import SAMPLE_PROJECT
+
+    out = run("dev", "check", str(SAMPLE_PROJECT))
+    assert "全部通过" in out

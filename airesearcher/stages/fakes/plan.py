@@ -162,7 +162,7 @@ class FakePlanStage:
         ctx.progress("计划（假实现）：等待审批", 2, 2, "steps")
         plan = parse_plan_md((ctx.root / PLAN).read_text(encoding="utf-8"))
         n_runs = plan.budget_estimate.get("runs")
-        checks = [PrecheckItem.model_validate(c) for c in json.loads((ctx.root / PRECHECK).read_text())]
+        checks = [PrecheckItem.model_validate(c) for c in json.loads((ctx.root / PRECHECK).read_text(encoding="utf-8"))]
         warns = [c.check for c in checks if c.status != "pass"]
         extra = [r for r in (ctx.archive.latest(PRECHECK), ctx.archive.latest(TASKS)) if r]
         return NeedsApproval(

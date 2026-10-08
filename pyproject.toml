@@ -16,12 +16,13 @@ dependencies = [
     "typer>=0.12",
     "httpx>=0.27",
     "rich>=13",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
 # 真实调用大模型时才需要；用假实现（fake）跑流程不需要
 llm = ["litellm>=1.40"]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "pytest-timeout>=2.3", "ruff>=0.5", "import-linter>=2.0"]
 
 [project.scripts]
 air = "airesearcher.cli.main:app"
@@ -44,3 +45,48 @@ ignore = ["B008", "UP042"]  # UP042：文档约定用 (str, Enum)
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+timeout = 300
+
+# 依赖规则（详细设计 1 第 2 节），CI 中用 lint-imports 检查
+[tool.importlinter]
+root_package = "airesearcher"
+
+[[tool.importlinter.contracts]]
+name = "core 不导入上层模块"
+type = "forbidden"
+source_modules = ["airesearcher.core"]
+forbidden_modules = [
+    "airesearcher.engine", "airesearcher.stages", "airesearcher.server", "airesearcher.cli",
+    "airesearcher.llm", "airesearcher.runtime", "airesearcher.services", "airesearcher.skills",
+    "airesearcher.testing",
+]
+
+[[tool.importlinter.contracts]]
+name = "services 只依赖 core"
+type = "forbidden"
+source_modules = ["airesearcher.services"]
+forbidden_modules = [
+    "airesearcher.engine", "airesearcher.stages", "airesearcher.server", "airesearcher.cli",
+    "airesearcher.llm", "airesearcher.runtime", "airesearcher.skills", "airesearcher.testing",
+]
+
+[[tool.importlinter.contracts]]
+name = "runtime 不导入引擎、阶段、后台"
+type = "forbidden"
+source_modules = ["airesearcher.runtime"]
+forbidden_modules = ["airesearcher.engine", "airesearcher.stages", "airesearcher.server", "airesearcher.cli"]
+
+[[tool.importlinter.contracts]]
+name = "engine 不导入后台和命令行"
+type = "forbidden"
+source_modules = ["airesearcher.engine"]
+forbidden_modules = ["airesearcher.server", "airesearcher.cli"]
+
+[[tool.importlinter.contracts]]
+name = "各阶段之间互不导入（需要别的阶段的数据时通过 services 读取）"
+type = "independence"
+modules = [
+    "airesearcher.stages.fakes.idea", "airesearcher.stages.fakes.plan",
+    "airesearcher.stages.fakes.experiment", "airesearcher.stages.fakes.writing",
+    "airesearcher.stages.example",
+]
