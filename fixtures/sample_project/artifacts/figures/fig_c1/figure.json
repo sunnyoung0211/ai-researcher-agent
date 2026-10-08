@@ -1,0 +1,41 @@
+{
+  "fig_id": "fig_c1",
+  "spec": {
+    "fig_id": "fig_c1",
+    "kind": "bar",
+    "aggregate_id": "C1",
+    "x": "method",
+    "hue": null,
+    "metric": "score",
+    "error": "ci95",
+    "title": "main 是否优于基线 baseline",
+    "xlabel": "method",
+    "ylabel": "score (%)",
+    "scale": 100.0,
+    "log_x": false,
+    "caption": "score 的均值，误差条为 95% 置信区间（每组 n 见 data.csv）。"
+  },
+  "aggregate_ref": {
+    "artifact_id": "artifacts/aggregates/C1.json",
+    "version": 1,
+    "sha256": "46e44bb5785651c3014f3951f2d8b8f58c4fafea62ff36e067cfb2e99c6cd94d"
+  },
+  "run_ids": [
+    "r-20261008-203756-772f",
+    "r-20261008-203757-d76a",
+    "r-20261008-203758-cbbf",
+    "r-20261008-203758-53a0",
+    "r-20261008-203800-0496",
+    "r-20261008-203801-14bc"
+  ],
+  "skill_ref": "fake-plotting@0",
+  "script_sha256": "e53690e5251d59c4ad4c0f305615d74d98945c26aceba0f8cd92a09f4ddc78bf",
+  "outputs": [
+    "artifacts/figures/fig_c1/fig_c1.svg"
+  ],
+  "n_per_group": {
+    "baseline": 3,
+    "main": 3
+  },
+  "created_at": "2026-10-08T20:38:05.086348+08:00"
+}

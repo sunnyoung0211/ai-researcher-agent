@@ -1,0 +1,18 @@
+{
+  "snapshot_id": "ss-fake-0001",
+  "source": "manual",
+  "query": "在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。",
+  "params": {
+    "fake": true
+  },
+  "requested_at": "2026-10-08T20:37:56.278659+08:00",
+  "status": "ok",
+  "raw_response": {
+    "note": "假实现，没有联网"
+  },
+  "paper_ids": [
+    "arxiv:2106.09685",
+    "arxiv:1810.04805",
+    "arxiv:2006.05987"
+  ]
+}

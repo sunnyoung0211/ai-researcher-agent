@@ -1,0 +1,3 @@
+method,metric,n,mean,std,ci95_low,ci95_high,min,max
+baseline,score,3,0.694233,0.013777,0.660009,0.728458,0.6853,0.7101
+main,score,3,0.7799,0.008643,0.758428,0.801372,0.7725,0.7894

@@ -1,0 +1,1 @@
+{"ref": {"artifact_id": "runs/r-20261008-203800-9ea4", "version": 1, "sha256": "f82b2db54858f1b0cf876da0b683673b252b640472a1fa9f2dd61289785266e4"}, "kind": "run", "path": "runs/r-20261008-203800-9ea4", "stored_at": null, "is_dir": true, "exclude": [], "parents": [], "producer": "agent:experiment/executor", "note": "运行结束：failed", "created_at": "2026-10-08T20:38:01.261876+08:00"}

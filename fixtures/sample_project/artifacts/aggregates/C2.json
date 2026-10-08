@@ -1,0 +1,115 @@
+{
+  "aggregate_id": "C2",
+  "comparison": {
+    "id": "C2",
+    "question": "消融：ablation 与 main 的差别",
+    "experiments": [
+      "E2",
+      "E3"
+    ],
+    "group_by": [
+      "method"
+    ],
+    "metric": "score",
+    "filter": {}
+  },
+  "plan_ref": {
+    "artifact_id": "plan/experiment_plan.md",
+    "version": 1,
+    "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+  },
+  "script": {
+    "path": "airesearcher/services/runs.py",
+    "git_blob": null,
+    "package_version": "0.1.0"
+  },
+  "eval_condition": "final",
+  "rows": [
+    {
+      "group": {
+        "method": "ablation"
+      },
+      "metric": "score",
+      "n": 3,
+      "mean": 0.7371,
+      "std": 0.017632,
+      "sem": 0.01018,
+      "ci95": [
+        0.6933,
+        0.7809
+      ],
+      "min": 0.7256,
+      "max": 0.7574,
+      "values": [
+        0.7256,
+        0.7574,
+        0.7283
+      ],
+      "run_ids": [
+        "r-20261008-203801-0e8d",
+        "r-20261008-203802-760a",
+        "r-20261008-203803-0c87"
+      ],
+      "outliers": [
+        0.7574
+      ]
+    },
+    {
+      "group": {
+        "method": "main"
+      },
+      "metric": "score",
+      "n": 3,
+      "mean": 0.7799,
+      "std": 0.008643,
+      "sem": 0.00499,
+      "ci95": [
+        0.758428,
+        0.801372
+      ],
+      "min": 0.7725,
+      "max": 0.7894,
+      "values": [
+        0.7778,
+        0.7894,
+        0.7725
+      ],
+      "run_ids": [
+        "r-20261008-203758-53a0",
+        "r-20261008-203800-0496",
+        "r-20261008-203801-14bc"
+      ],
+      "outliers": []
+    }
+  ],
+  "contrasts": [
+    {
+      "a": {
+        "method": "main"
+      },
+      "b": {
+        "method": "ablation"
+      },
+      "metric": "score",
+      "diff_mean": 0.0428,
+      "welch_t": 3.7752,
+      "p_value": 0.0343,
+      "n_a": 3,
+      "n_b": 3
+    }
+  ],
+  "excluded": [
+    {
+      "run_id": "r-20261008-203800-9ea4",
+      "reason": "failed: nonzero_exit"
+    }
+  ],
+  "cost": {
+    "runs_total": 7,
+    "runs_failed": 1,
+    "failure_rate": 0.1429,
+    "cpu_hours": 0.000055,
+    "gpu_hours": 0.0
+  },
+  "created_at": "2026-10-08T20:38:05.064433+08:00"
+}

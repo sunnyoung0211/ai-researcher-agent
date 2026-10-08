@@ -1,0 +1,44 @@
+{
+  "question": {
+    "question_id": "q-0001",
+    "stage": "experiment",
+    "text": "运行 **E2-seed=2**（r-20261008-203800-9ea4）失败：nonzero_exit。\n\nstderr 末尾：\n```\n模拟错误：RuntimeError('smoke failure')\n```\n请选择处理方式：",
+    "options": [
+      {
+        "id": "skip",
+        "label": "跳过这个组合，继续其他运行",
+        "default": true
+      },
+      {
+        "id": "retry",
+        "label": "我已手动修改代码，重试（假实现会去掉故障设置）",
+        "default": false
+      },
+      {
+        "id": "end",
+        "label": "结束项目",
+        "default": false
+      }
+    ],
+    "allow_text": false,
+    "refs": [
+      {
+        "artifact_id": "runs/r-20261008-203800-9ea4",
+        "version": 1,
+        "sha256": "f82b2db54858f1b0cf876da0b683673b252b640472a1fa9f2dd61289785266e4"
+      }
+    ],
+    "status": "answered",
+    "created_at": "2026-10-08T20:38:01.263767+08:00"
+  },
+  "answer": {
+    "question_id": "q-0001",
+    "choice": "retry",
+    "text": "已检查代码，重试一次",
+    "answered_by": "user",
+    "answered_at": "2026-10-08T20:38:01.266325+08:00",
+    "request_ids": [
+      "sample-retry"
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "check": "license",
+    "status": "pass",
+    "detail": "任务没有外部数据"
+  },
+  {
+    "check": "leakage_split",
+    "status": "pass",
+    "detail": "所有实验都在 final 划分上评价，没有探索性实验"
+  },
+  {
+    "check": "metric",
+    "status": "pass",
+    "detail": "主要指标 score"
+  },
+  {
+    "check": "fairness",
+    "status": "pass",
+    "detail": "各实验的变量取值与种子数相同"
+  },
+  {
+    "check": "repeats",
+    "status": "pass",
+    "detail": "每个实验 3 个种子"
+  },
+  {
+    "check": "coverage",
+    "status": "pass",
+    "detail": "覆盖假设 ['H1']"
+  },
+  {
+    "check": "budget",
+    "status": "pass",
+    "detail": "估计 0.0025 小时，预算 6.0 小时"
+  }
+]

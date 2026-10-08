@@ -1,0 +1,6 @@
+{
+  "fail_mode": "none",
+  "method": "ablation",
+  "seconds": 1.0,
+  "seed": 2
+}

@@ -1,0 +1,35 @@
+{
+  "novelty": {
+    "score": 3,
+    "rationale": "假实现：固定分数",
+    "evidence": [],
+    "to_verify": true
+  },
+  "feasibility": {
+    "score": 3,
+    "rationale": "假实现：固定分数",
+    "evidence": [],
+    "to_verify": true
+  },
+  "impact": {
+    "score": 3,
+    "rationale": "假实现：固定分数",
+    "evidence": [],
+    "to_verify": true
+  },
+  "testability": {
+    "score": 3,
+    "rationale": "假实现：固定分数",
+    "evidence": [],
+    "to_verify": true
+  },
+  "risk": {
+    "score": 3,
+    "rationale": "假实现：固定分数",
+    "evidence": [],
+    "to_verify": true
+  },
+  "note": "评分仅供参考，不是唯一决策依据",
+  "model": "fake",
+  "prompt_version": 0
+}

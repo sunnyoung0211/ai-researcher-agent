@@ -1,0 +1,15 @@
+{
+  "fig_id": "fig_c2",
+  "kind": "bar",
+  "aggregate_id": "C2",
+  "x": "method",
+  "hue": null,
+  "metric": "score",
+  "error": "ci95",
+  "title": "消融：ablation 与 main 的差别",
+  "xlabel": "method",
+  "ylabel": "score (%)",
+  "scale": 100.0,
+  "log_x": false,
+  "caption": "score 的均值，误差条为 95% 置信区间（每组 n 见 data.csv）。"
+}

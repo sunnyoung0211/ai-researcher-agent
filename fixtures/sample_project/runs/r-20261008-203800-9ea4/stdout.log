@@ -1,0 +1,2 @@
+smoke: method=main seed=2 seconds=1.0 fail_mode=exit1
+step 1/2

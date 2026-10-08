@@ -1,0 +1,66 @@
+project_id: p-20261008-e60d
+title: 小样本分类：基线、主方法与消融的比较（样例项目）
+created_at: '2026-10-08T20:37:56.207067+08:00'
+goal: 在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。
+constraints: {}
+task: tasks/smoke
+evidence_check: true
+reading_mode: multi
+models: {}
+budget:
+  llm_usd:
+    soft: 4.0
+    hard: 5.0
+  wall_hours:
+    soft: null
+    hard: 6.0
+  gpu_hours:
+    soft: null
+    hard: 2.0
+  storage_gb:
+    soft: null
+    hard: 5.0
+limits:
+  search_papers: 20
+  read_papers: 8
+  reader_concurrency: 2
+  max_rounds: 3
+  max_repair_retries: 2
+permissions:
+  network:
+    allow:
+    - api.semanticscholar.org
+    - export.arxiv.org
+    - arxiv.org
+    - huggingface.co
+    - cdn-lfs.huggingface.co
+  exec:
+    local: true
+    gpu_serial: true
+    max_parallel_cpu: 2
+  write:
+    roots:
+    - .
+    - ${AIR_HOME}/data
+  publish: false
+llm_cache: 'off'
+template: null
+literature:
+  year_from: 2021
+  replay_snapshots: null
+experiment:
+  trial_timeout_s: 300
+  python: python
+  prepare_timeout_s: 1800
+paper:
+  max_review_rounds: 2
+  max_compile_fixes: 2
+  review_build: false
+  figure_style: air
+dev:
+  stage_impl: {}
+  smoke_seconds: 1.0
+  smoke_fail:
+    E2-seed=2: exit1
+  poll_seconds: 1
+  compile: true

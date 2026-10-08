@@ -1,0 +1,98 @@
+---
+idea_id: idea-001
+title: 小样本分类：基线、主方法与消融的比较（样例项目）
+research_question: 在任务 smoke 上，方法 main 的 score 是否优于基线 baseline？（由研究目标生成：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。）
+motivation: 用户的研究目标：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。。已有工作对小数据场景下的结论不一致 [arxiv:2006.05987]。
+hypotheses:
+- id: H1
+  statement: main 的平均 score 高于 baseline。
+  falsified_if: 3 个种子的平均 score 差值 ≤ 0。
+contributions:
+- 在统一预算下比较 baseline 与 main，并做消融实验
+task:
+  domain: generic
+  task_config: tasks/smoke
+  description: 冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score
+data: []
+baselines:
+- id: B1
+  name: baseline
+  why: 最常用的标准做法
+  citations:
+  - arxiv:1810.04805
+methods:
+- id: M1
+  name: main
+  description: 主方法 main
+  citations:
+  - arxiv:2106.09685
+metrics:
+- name: score
+  direction: higher
+  primary: true
+- name: run_seconds
+  direction: lower
+  primary: false
+budget:
+  llm_usd: 5.0
+  wall_hours: 6.0
+  gpu_hours: 2.0
+  storage_gb: 5.0
+stopping_conditions:
+- 计划内实验全部完成
+- 预算达到硬上限
+- 连续 2 轮没有有效进展
+expected_difficulties:
+- 小样本下方差大，需要多个种子
+open_questions:
+- （假实现）未检索真实文献，请在真实实现中替换
+citations:
+- arxiv:2106.09685
+- arxiv:1810.04805
+- arxiv:2006.05987
+scores_ref: idea/scores.json
+gap_table_ref: idea/gap_table.md
+---
+
+# 研究问题
+在任务 smoke 上，方法 main 的 score 是否优于基线 baseline？（由研究目标生成：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。）
+
+# 动机
+用户的研究目标：在每类只有几百条训练样本时，比较基线方法、主方法和一个消融版本在分类得分上的差异，并检查结果是否稳定。。已有工作对小数据场景下的结论不一致 [arxiv:2006.05987]。
+
+# 假设
+- **H1**：main 的平均 score 高于 baseline。（证伪条件：3 个种子的平均 score 差值 ≤ 0。）
+
+# 贡献
+- 在统一预算下比较 baseline 与 main，并做消融实验
+
+# 任务与数据
+- 任务配置：`tasks/smoke`（冒烟任务：按配置运行几秒，上报一个可复现的随机指标 score）
+
+# 基线与方法
+- 基线 B1 baseline：最常用的标准做法 [arxiv:1810.04805]
+- 方法 M1 main：主方法 main [arxiv:2106.09685]
+
+# 评价指标
+- score（越高越好，主要指标）
+- run_seconds（越低越好）
+
+# 预期困难
+- 小样本下方差大，需要多个种子
+
+# 预算与停止条件
+- 预算：{'llm_usd': 5.0, 'wall_hours': 6.0, 'gpu_hours': 2.0, 'storage_gb': 5.0}
+- 计划内实验全部完成
+- 预算达到硬上限
+- 连续 2 轮没有有效进展
+
+# 待确认问题
+- （假实现）未检索真实文献，请在真实实现中替换
+
+# 参考文献
+- [arxiv:2106.09685] Hu et al. 2022. LoRA: Low-Rank Adaptation of Large Language Models. https://arxiv.org/abs/2106.09685
+- [arxiv:1810.04805] Devlin et al. 2019. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding. https://arxiv.org/abs/1810.04805
+- [arxiv:2006.05987] Zhang et al. 2021. Revisiting Few-sample BERT Fine-tuning. https://arxiv.org/abs/2006.05987
+
+# 修订说明
+- 按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标

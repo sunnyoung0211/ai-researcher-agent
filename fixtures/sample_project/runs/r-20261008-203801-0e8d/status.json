@@ -1,0 +1,14 @@
+{
+  "run_id": "r-20261008-203801-0e8d",
+  "state": "succeeded",
+  "host": "ZHUdeMacBook-Pro.local",
+  "pid": 13884,
+  "pgid": 13884,
+  "wrapper_pid": 13883,
+  "started_at": "2026-10-08T20:38:01.934077+08:00",
+  "heartbeat_at": "2026-10-08T20:38:01.934764+08:00",
+  "ended_at": "2026-10-08T20:38:02.969235+08:00",
+  "exit_code": 0,
+  "failure_reason": null,
+  "error_class": null
+}

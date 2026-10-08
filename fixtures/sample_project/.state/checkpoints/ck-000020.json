@@ -1,0 +1,187 @@
+{
+  "checkpoint_id": "ck-000020",
+  "saved_at": "2026-10-08T20:38:01.857014+08:00",
+  "state": "Executing",
+  "resume_to": null,
+  "pending_approval": null,
+  "pending_question": null,
+  "approved": {
+    "idea": {
+      "artifact_id": "idea/selected.md",
+      "version": 2,
+      "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "plan": {
+      "artifact_id": "plan/experiment_plan.md",
+      "version": 1,
+      "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+    }
+  },
+  "stale": [],
+  "feedback_approval_ids": [],
+  "entry": null,
+  "scratch": {
+    "idea": {
+      "phase": "submit",
+      "handled_feedback": "ap-0001",
+      "notes": [
+        "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
+      ]
+    },
+    "_label": "实验（假实现）：第 1 轮执行中（5/9）",
+    "_progress": {
+      "done": 5,
+      "total": 9,
+      "unit": "runs"
+    },
+    "plan": {
+      "idea_sha": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "experiment": {
+      "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
+      "plan_version": 1,
+      "commit": "727ce0556e6ad452594a5c7b7ac7ce17e21dbe8f",
+      "round": 1,
+      "tasks": {
+        "E1-seed=0": {
+          "status": "done",
+          "runs": [
+            "r-20261008-203756-772f"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E1-seed=1": {
+          "status": "done",
+          "runs": [
+            "r-20261008-203757-d76a"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E1-seed=2": {
+          "status": "done",
+          "runs": [
+            "r-20261008-203758-cbbf"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=0": {
+          "status": "done",
+          "runs": [
+            "r-20261008-203758-53a0"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=1": {
+          "status": "done",
+          "runs": [
+            "r-20261008-203800-0496"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=2": {
+          "status": "running",
+          "runs": [
+            "r-20261008-203800-9ea4",
+            "r-20261008-203801-14bc"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final",
+          "retry_of": "r-20261008-203800-9ea4"
+        },
+        "E3-seed=0": {
+          "status": "running",
+          "runs": [
+            "r-20261008-203801-0e8d"
+          ],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E3-seed=1": {
+          "status": "todo",
+          "runs": [],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E3-seed=2": {
+          "status": "todo",
+          "runs": [],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        }
+      }
+    }
+  },
+  "consecutive_errors": 0,
+  "last_event_seq": 55,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
+}

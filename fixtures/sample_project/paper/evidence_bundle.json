@@ -1,0 +1,51 @@
+{
+  "idea_ref": {
+    "artifact_id": "idea/selected.md",
+    "version": 2,
+    "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+  },
+  "plan_ref": {
+    "artifact_id": "plan/experiment_plan.md",
+    "version": 1,
+    "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+  },
+  "aggregates": [
+    {
+      "aggregate_id": "C1",
+      "ref": {
+        "artifact_id": "artifacts/aggregates/C1.json",
+        "version": 1,
+        "sha256": "46e44bb5785651c3014f3951f2d8b8f58c4fafea62ff36e067cfb2e99c6cd94d"
+      }
+    },
+    {
+      "aggregate_id": "C2",
+      "ref": {
+        "artifact_id": "artifacts/aggregates/C2.json",
+        "version": 1,
+        "sha256": "e28d3082c1dc9b40e988e6522fa254c9773c876641606ec10f1a3c2cf64fdabd"
+      }
+    }
+  ],
+  "logs": [
+    {
+      "artifact_id": "logs/round_1.md",
+      "version": 1,
+      "sha256": "8bcf21348ab8660f0a0c3f5f0c3c870c30f4b68095000f40dd68280e28d68984"
+    }
+  ],
+  "papers": [
+    {
+      "paper_id": "arxiv:2106.09685",
+      "status": "verified"
+    },
+    {
+      "paper_id": "arxiv:1810.04805",
+      "status": "verified"
+    },
+    {
+      "paper_id": "arxiv:2006.05987",
+      "status": "verified"
+    }
+  ]
+}
