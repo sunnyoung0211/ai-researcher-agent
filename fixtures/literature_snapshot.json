@@ -1,0 +1,362 @@
+{
+ "description": "FakeLiterature 的检索快照：真实论文的元数据，摘要字段是我们自己写的一句话概括（不是原文摘要）。BERT 同时有 arXiv 预印本和 NAACL 正式版两条记录，用来练习去重。",
+ "queries": {},
+ "papers": [
+  {
+   "paper_id": "arxiv:2106.09685",
+   "ids": {
+    "arxiv": "2106.09685"
+   },
+   "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+   "authors": [
+    "Edward J. Hu",
+    "Yelong Shen",
+    "Phillip Wallis",
+    "Zeyuan Allen-Zhu",
+    "Yuanzhi Li",
+    "Shean Wang",
+    "Lu Wang",
+    "Weizhu Chen"
+   ],
+   "year": 2022,
+   "venue": "ICLR",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2106.09685",
+   "abstract": "Freezes the pretrained weights and trains low-rank update matrices injected into each layer, matching full fine-tuning quality with far fewer trainable parameters.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "low-rank adaptation",
+    "lora"
+   ],
+   "citation_key": "hu2022lora"
+  },
+  {
+   "paper_id": "arxiv:1810.04805",
+   "ids": {
+    "arxiv": "1810.04805"
+   },
+   "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+   "authors": [
+    "Jacob Devlin",
+    "Ming-Wei Chang",
+    "Kenton Lee",
+    "Kristina Toutanova"
+   ],
+   "year": 2018,
+   "venue": "arXiv",
+   "venue_type": "preprint",
+   "url": "https://arxiv.org/abs/1810.04805",
+   "abstract": "Pretrains a bidirectional Transformer encoder with masked language modeling and next-sentence prediction, then fine-tunes all parameters on downstream tasks.",
+   "keywords": [
+    "pretraining",
+    "fine-tuning",
+    "text classification",
+    "bert"
+   ],
+   "citation_key": "devlin2018bert"
+  },
+  {
+   "paper_id": "doi:10.18653/v1/N19-1423",
+   "ids": {
+    "doi": "10.18653/v1/N19-1423",
+    "arxiv": "1810.04805"
+   },
+   "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+   "authors": [
+    "Jacob Devlin",
+    "Ming-Wei Chang",
+    "Kenton Lee",
+    "Kristina Toutanova"
+   ],
+   "year": 2019,
+   "venue": "NAACL",
+   "venue_type": "conference",
+   "url": "https://doi.org/10.18653/v1/N19-1423",
+   "abstract": "Published version of the BERT paper (same work as the arXiv preprint).",
+   "keywords": [
+    "pretraining",
+    "fine-tuning",
+    "text classification",
+    "bert"
+   ],
+   "citation_key": "devlin2019bert"
+  },
+  {
+   "paper_id": "arxiv:2006.05987",
+   "ids": {
+    "arxiv": "2006.05987"
+   },
+   "title": "Revisiting Few-sample BERT Fine-tuning",
+   "authors": [
+    "Tianyi Zhang",
+    "Felix Wu",
+    "Arzoo Katiyar",
+    "Kilian Q. Weinberger",
+    "Yoav Artzi"
+   ],
+   "year": 2021,
+   "venue": "ICLR",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2006.05987",
+   "abstract": "Studies why fine-tuning BERT on small datasets is unstable and proposes simple fixes such as bias-corrected optimization and re-initializing top layers.",
+   "keywords": [
+    "few-shot",
+    "low-resource",
+    "fine-tuning stability",
+    "bert"
+   ],
+   "citation_key": "zhang2021revisiting"
+  },
+  {
+   "paper_id": "arxiv:2006.04884",
+   "ids": {
+    "arxiv": "2006.04884"
+   },
+   "title": "On the Stability of Fine-tuning BERT: Misconceptions, Explanations, and Strong Baselines",
+   "authors": [
+    "Marius Mosbach",
+    "Maksym Andriushchenko",
+    "Dietrich Klakow"
+   ],
+   "year": 2021,
+   "venue": "ICLR",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2006.04884",
+   "abstract": "Attributes fine-tuning instability on small datasets to optimization difficulties and recommends longer training with small learning rates as a strong baseline.",
+   "keywords": [
+    "fine-tuning stability",
+    "low-resource",
+    "variance across seeds",
+    "bert"
+   ],
+   "citation_key": "mosbach2021stability"
+  },
+  {
+   "paper_id": "arxiv:1902.00751",
+   "ids": {
+    "arxiv": "1902.00751"
+   },
+   "title": "Parameter-Efficient Transfer Learning for NLP",
+   "authors": [
+    "Neil Houlsby",
+    "Andrei Giurgiu",
+    "Stanislaw Jastrzebski",
+    "Bruna Morrone",
+    "Quentin de Laroussilhe",
+    "Andrea Gesmundo",
+    "Mona Attariyan",
+    "Sylvain Gelly"
+   ],
+   "year": 2019,
+   "venue": "ICML",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/1902.00751",
+   "abstract": "Introduces adapter modules: small bottleneck layers inserted into a frozen pretrained Transformer, trained per task.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "adapters",
+    "transfer learning"
+   ],
+   "citation_key": "houlsby2019parameter"
+  },
+  {
+   "paper_id": "arxiv:2101.00190",
+   "ids": {
+    "arxiv": "2101.00190"
+   },
+   "title": "Prefix-Tuning: Optimizing Continuous Prompts for Generation",
+   "authors": [
+    "Xiang Lisa Li",
+    "Percy Liang"
+   ],
+   "year": 2021,
+   "venue": "ACL",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2101.00190",
+   "abstract": "Keeps the language model frozen and optimizes a small sequence of continuous task-specific vectors prepended to every layer.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "prefix tuning",
+    "prompt"
+   ],
+   "citation_key": "li2021prefix"
+  },
+  {
+   "paper_id": "arxiv:2104.08691",
+   "ids": {
+    "arxiv": "2104.08691"
+   },
+   "title": "The Power of Scale for Parameter-Efficient Prompt Tuning",
+   "authors": [
+    "Brian Lester",
+    "Rami Al-Rfou",
+    "Noah Constant"
+   ],
+   "year": 2021,
+   "venue": "EMNLP",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2104.08691",
+   "abstract": "Learns soft prompt embeddings for a frozen model and shows the gap to full fine-tuning closes as model size grows.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "prompt tuning",
+    "model scale"
+   ],
+   "citation_key": "lester2021power"
+  },
+  {
+   "paper_id": "arxiv:2106.10199",
+   "ids": {
+    "arxiv": "2106.10199"
+   },
+   "title": "BitFit: Simple Parameter-efficient Fine-tuning for Transformer-based Masked Language-models",
+   "authors": [
+    "Elad Ben Zaken",
+    "Shauli Ravfogel",
+    "Yoav Goldberg"
+   ],
+   "year": 2022,
+   "venue": "ACL",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2106.10199",
+   "abstract": "Fine-tunes only the bias terms of a pretrained model and reports competitive results, especially with small and medium training sets.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "bias tuning",
+    "low-resource",
+    "text classification"
+   ],
+   "citation_key": "benzaken2022bitfit"
+  },
+  {
+   "paper_id": "arxiv:2110.04366",
+   "ids": {
+    "arxiv": "2110.04366"
+   },
+   "title": "Towards a Unified View of Parameter-Efficient Transfer Learning",
+   "authors": [
+    "Junxian He",
+    "Chunting Zhou",
+    "Xuezhe Ma",
+    "Taylor Berg-Kirkpatrick",
+    "Graham Neubig"
+   ],
+   "year": 2022,
+   "venue": "ICLR",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2110.04366",
+   "abstract": "Frames adapters, prefix tuning and LoRA as modifications of hidden states and derives improved combined variants.",
+   "keywords": [
+    "parameter-efficient fine-tuning",
+    "adapters",
+    "lora",
+    "prefix tuning",
+    "comparison"
+   ],
+   "citation_key": "he2022towards"
+  },
+  {
+   "paper_id": "arxiv:2205.05638",
+   "ids": {
+    "arxiv": "2205.05638"
+   },
+   "title": "Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning",
+   "authors": [
+    "Haokun Liu",
+    "Derek Tam",
+    "Mohammed Muqeeth",
+    "Jay Mohta",
+    "Tenghao Huang",
+    "Mohit Bansal",
+    "Colin Raffel"
+   ],
+   "year": 2022,
+   "venue": "NeurIPS",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2205.05638",
+   "abstract": "Proposes (IA)^3, which rescales activations with learned vectors, and shows few-shot parameter-efficient fine-tuning beats in-context learning at lower cost.",
+   "keywords": [
+    "few-shot",
+    "parameter-efficient fine-tuning",
+    "in-context learning"
+   ],
+   "citation_key": "liu2022fewshot"
+  },
+  {
+   "paper_id": "arxiv:2209.11055",
+   "ids": {
+    "arxiv": "2209.11055"
+   },
+   "title": "Efficient Few-Shot Learning Without Prompts",
+   "authors": [
+    "Lewis Tunstall",
+    "Nils Reimers",
+    "Unso Eun Seo Jo",
+    "Luke Bates",
+    "Daniel Korat",
+    "Moshe Wasserblat",
+    "Oren Pereg"
+   ],
+   "year": 2022,
+   "venue": "arXiv",
+   "venue_type": "preprint",
+   "url": "https://arxiv.org/abs/2209.11055",
+   "abstract": "SetFit: contrastively fine-tunes a sentence encoder on few labeled pairs, then trains a classification head; strong few-shot text classification without prompts.",
+   "keywords": [
+    "few-shot",
+    "text classification",
+    "sentence embeddings",
+    "low-resource"
+   ],
+   "citation_key": "tunstall2022efficient"
+  },
+  {
+   "paper_id": "arxiv:2012.15723",
+   "ids": {
+    "arxiv": "2012.15723"
+   },
+   "title": "Making Pre-trained Language Models Better Few-shot Learners",
+   "authors": [
+    "Tianyu Gao",
+    "Adam Fisch",
+    "Danqi Chen"
+   ],
+   "year": 2021,
+   "venue": "ACL",
+   "venue_type": "conference",
+   "url": "https://arxiv.org/abs/2012.15723",
+   "abstract": "LM-BFF: prompt-based fine-tuning with automatically generated prompts and demonstrations for few-shot classification.",
+   "keywords": [
+    "few-shot",
+    "prompt-based fine-tuning",
+    "text classification"
+   ],
+   "citation_key": "gao2021making"
+  },
+  {
+   "paper_id": "arxiv:1910.01108",
+   "ids": {
+    "arxiv": "1910.01108"
+   },
+   "title": "DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter",
+   "authors": [
+    "Victor Sanh",
+    "Lysandre Debut",
+    "Julien Chaumond",
+    "Thomas Wolf"
+   ],
+   "year": 2019,
+   "venue": "arXiv",
+   "venue_type": "preprint",
+   "url": "https://arxiv.org/abs/1910.01108",
+   "abstract": "Uses knowledge distillation during pretraining to obtain a smaller BERT that keeps most of its language understanding ability.",
+   "keywords": [
+    "distillation",
+    "small model",
+    "efficiency",
+    "bert"
+   ],
+   "citation_key": "sanh2019distilbert"
+  }
+ ]
+}
