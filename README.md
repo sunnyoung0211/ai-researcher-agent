@@ -185,7 +185,9 @@ air answer skip
 | `air pause` / `air resume` / `air cancel` / `air reopen` | 暂停 / 继续 / 取消 / 重新打开已完成的项目 |
 | `air runs` / `air logs <运行编号> [-f]` | 查看实验运行 / 运行日志 |
 | `air models` / `air models test <名字>` / `air models init` | 查看已配置的大模型 / 试调用一次 / 生成配置模板（见第 9 节） |
-| `air dev new-workspace <目录>` / `air dev run-stage <阶段> --workspace <目录>` | 开发调试用（不经过后台，见第 5 节） |
+| `air dev new-workspace <目录>` / `air dev run-stage <阶段> --workspace <目录>` | 开发调试用（不经过后台，见第 5 节）；`new-workspace --from fixtures/sample_project --register` 让后台显示样例项目 |
+| `air dev check <目录>` | 检查项目里的交接文件是否符合约定格式 |
+| `air skills list` / `air skills verify <名字>` | 查看 skill 版本 / 用小样例验证新版本，通过后启用 |
 
 - 大多数命令的“项目编号”可以省略，省略时用**最近创建的项目**。
 - 每个命令都可以加 `--help` 查看说明，例如 `air new --help`。
@@ -209,6 +211,8 @@ air answer skip
 | `.archive/` | 所有产物的历史版本（只增不删） |
 
 ## 5. 给组员：用真实实现替换假实现
+
+**先看各角色的开工指南**：[docs/开工指南/](docs/开工指南/README.md)（文献、实验、论文、GUI 各一页：从哪里开始、主干已经准备了什么、测试怎么写）。
 
 | 阶段 | 假实现（现在） | 真实实现放这里 | 负责人 |
 |---|---|---|---|
@@ -257,6 +261,7 @@ air dev check /tmp/ws
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |
 | 证据核验 `services/evidence.py` | **部分**：只做了数字重算、过期证据、结论相反、引用不存在四项检查 |
 | 文献检索、选题、实验计划、编码 Agent、分析决策、论文写作 | **假实现**（固定内容，不调用大模型） |
+| 测试替身 `FakeLLM`、`FakeExecutor`、`FakeLiterature`；skill 版本登记与 `air skills verify` | **真实**（给组员写测试用） |
 | SQLite 索引 | **没做**：目前直接读文件（数据量小，够用） |
 | GUI | 不在本仓库这部分（GUI 同学负责），接口见 http://127.0.0.1:8765/docs |
 
