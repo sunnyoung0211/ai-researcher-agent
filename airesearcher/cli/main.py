@@ -576,19 +576,26 @@ def dev_new_workspace(
     idea: str = typer.Option("比较基线、主方法和消融在冒烟任务上的得分", "--idea"),
     task: str = typer.Option("tasks/smoke", "--task"),
     impl: str = typer.Option(None, "--impl", help='如 "idea=example" 或 "fake"'),
+    register: bool = typer.Option(False, "--register",
+                                  help="登记到后台，air serve 和 GUI 中能看到（重启 air serve 生效）"),
 ):
-    """创建一个可随便改的测试工作区（不登记到后台）。"""
+    """创建一个可随便改的测试工作区（默认不登记到后台）。"""
     from airesearcher.core.project import Project
+    from airesearcher.core.workspace import register_project
 
     if path.exists() and any(path.iterdir()):
         fail(f"{path} 已存在且不为空")
     if from_:
         shutil.copytree(from_, path, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".gitignore"))
-        console.print(f"[green]✓ 已从 {from_} 复制到 {path}[/]")
-        return
-    dev = {"stage_impl": _parse_impl(impl)} if impl else {}
-    p = Project.create(goal=idea, task=task, root=path, register=False, dev=dev)
-    console.print(f"[green]✓ 已创建工作区 {p.root}（项目 {p.project_id}）[/]")
+        p = Project.open(path)
+        console.print(f"[green]✓ 已从 {from_} 复制到 {path}（项目 {p.project_id}）[/]")
+    else:
+        dev = {"stage_impl": _parse_impl(impl)} if impl else {}
+        p = Project.create(goal=idea, task=task, root=path, register=False, dev=dev)
+        console.print(f"[green]✓ 已创建工作区 {p.root}（项目 {p.project_id}）[/]")
+    if register:
+        register_project(p.project_id, p.root)
+        console.print("已登记到后台：重启 air serve 后，air list 和 GUI 中就能看到它")
 
 
 @dev_app.command("check")
