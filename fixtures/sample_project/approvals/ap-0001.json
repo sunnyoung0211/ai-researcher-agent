@@ -23,12 +23,12 @@
     {
       "artifact_id": "idea/literature.jsonl",
       "version": 1,
-      "sha256": "ab47c180199d3e2b9ee497c348cb5fbd9c2ed1bd99ad52e35dcfc19e5c48c34c"
+      "sha256": "2efefb6ac4933e3480d803fa4597981a35c6712453403c9c88fcc1a70f092ca5"
     }
   ],
   "status": "changes_requested",
-  "created_at": "2026-10-08T20:37:56.285023+08:00",
-  "decided_at": "2026-10-08T20:37:56.285699+08:00",
+  "created_at": "2026-10-10T11:38:07.515794+08:00",
+  "decided_at": "2026-10-10T11:38:07.516502+08:00",
   "decision_comment": "研究问题请写明每类样本数和主要指标",
   "decided_by": "user",
   "request_ids": [

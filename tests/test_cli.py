@@ -83,6 +83,22 @@ def test_dev_commands(tmp_path):
     assert "自动批准" in out
 
 
+def test_new_workspace_register_sample(tmp_path, air_home):
+    """GUI 开发：把样例项目复制一份并登记，后台启动后能通过 API 读到。"""
+    from airesearcher.core.workspace import load_registry
+    from airesearcher.testing.sample import SAMPLE_PROJECT
+
+    ws = tmp_path / "sample"
+    out = run("dev", "new-workspace", str(ws), "--from", str(SAMPLE_PROJECT), "--register")
+    assert "已登记到后台" in out
+    [(pid, path)] = load_registry(air_home).items()
+    assert path == str(ws.resolve())
+    with TestClient(create_app(home=air_home, start_engines=False)) as c:
+        st = c.get(f"/api/projects/{pid}").json()
+        assert st["state"] == "ManuscriptPending"
+        assert len(c.get(f"/api/projects/{pid}/runs").json()) == 11
+
+
 def test_dev_check_sample_project():
     from airesearcher.testing.sample import SAMPLE_PROJECT
 

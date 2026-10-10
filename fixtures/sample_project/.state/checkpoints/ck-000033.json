@@ -1,6 +1,6 @@
 {
   "checkpoint_id": "ck-000033",
-  "saved_at": "2026-10-08T20:38:06.234783+08:00",
+  "saved_at": "2026-10-10T11:38:17.469048+08:00",
   "state": "Writing",
   "resume_to": null,
   "pending_approval": null,
@@ -19,7 +19,7 @@
     "log": {
       "artifact_id": "logs/round_1.md",
       "version": 1,
-      "sha256": "8bcf21348ab8660f0a0c3f5f0c3c870c30f4b68095000f40dd68280e28d68984"
+      "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
     }
   },
   "stale": [],
@@ -31,7 +31,7 @@
       {
         "artifact_id": "logs/round_1.md",
         "version": 1,
-        "sha256": "8bcf21348ab8660f0a0c3f5f0c3c870c30f4b68095000f40dd68280e28d68984"
+        "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
       }
     ]
   },
@@ -55,13 +55,13 @@
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "727ce0556e6ad452594a5c7b7ac7ce17e21dbe8f",
+      "commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203756-772f"
+            "r-20261010-113808-e173"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -76,7 +76,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203757-d76a"
+            "r-20261010-113808-6128"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -91,7 +91,7 @@
         "E1-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-cbbf"
+            "r-20261010-113809-6926"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -106,7 +106,7 @@
         "E2-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-53a0"
+            "r-20261010-113809-0426"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -121,7 +121,7 @@
         "E2-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203800-0496"
+            "r-20261010-113811-02ea"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -136,8 +136,8 @@
         "E2-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203800-9ea4",
-            "r-20261008-203801-14bc"
+            "r-20261010-113811-67d8",
+            "r-20261010-113812-86a1"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -148,12 +148,12 @@
             "fail_mode": "none"
           },
           "eval_condition": "final",
-          "retry_of": "r-20261008-203800-9ea4"
+          "retry_of": "r-20261010-113811-67d8"
         },
         "E3-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203801-0e8d"
+            "r-20261010-113813-5303"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -168,7 +168,7 @@
         "E3-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203802-760a"
+            "r-20261010-113814-a639"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -183,7 +183,7 @@
         "E3-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203803-0c87"
+            "r-20261010-113814-daa4"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -208,35 +208,35 @@
       }
     },
     "writing": {
-      "basis": "c25da0aab8da69a4",
+      "basis": "17c1c327a86f2a56",
       "phase": "submit",
       "fig_refs": [
         {
           "artifact_id": "artifacts/figures/fig_c1",
           "version": 1,
-          "sha256": "e4c4d064fa9269b1580c6cd8834429f7652ec2b32aa6fe3ccac82bc63c687dea"
+          "sha256": "32c2b6dd00a671c8cb63b46acc61f99a2943d3c4c99958f045a4983ad7fe642d"
         },
         {
           "artifact_id": "artifacts/figures/fig_c2",
           "version": 1,
-          "sha256": "194352290d4b68e304646fae76d25d954395b685867dca16a51f7c4c03760635"
+          "sha256": "f4d21d47e2ae6e542000193ad991d40d9b60d3081d685e70225b79935c4158b0"
         }
       ],
       "paper_ref": {
         "artifact_id": "paper",
         "version": 1,
-        "sha256": "8fc89febd0d8bb9d9923e97d8db0b963d167f2bec46e35e4b68276c1361f0043"
+        "sha256": "4ca04907d61d34effc0de20adb94ca5e1ba67b4c088466b37ce94e4353a84e98"
       },
       "refs": {
         "review": {
           "artifact_id": "paper/review/review_v1.json",
           "version": 1,
-          "sha256": "8e75a8fe70cedab828e84082cef3f307cbb84ee9ca82e668bae0385857c3e000"
+          "sha256": "43cbe36a985eb102e476dfe266b390ae5b53d335d854710c6a297d989e59fcf7"
         },
         "compile": {
           "artifact_id": "paper/build/compile_report.json",
           "version": 1,
-          "sha256": "2c4b3ccb8f326f8f21964cc64a078969a7c19bd97a606f5866dec1186b23c039"
+          "sha256": "9a0573eb55bfbecacf881c4ac772d04b7b150e8a81209f7fdb3129750c5fd97b"
         },
         "claims": {
           "artifact_id": "paper/claims.jsonl",
@@ -246,7 +246,7 @@
         "pdf": {
           "artifact_id": "paper/build/main.pdf",
           "version": 1,
-          "sha256": "cd1f3180302ad6e4c55f3fec508c08dd6d62cd6467b0f3aae1fe73b238034681"
+          "sha256": "0f2cb40c94cb7c19c4adcb5a37474fdc70a550b9998d03c0b90362a45d1664bc"
         },
         "review_path": "paper/review/review_v1.json"
       }

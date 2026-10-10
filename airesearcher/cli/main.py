@@ -31,6 +31,8 @@ dev_app = typer.Typer(help="开发调试命令（不经过后台，直接操作�
 app.add_typer(dev_app, name="dev")
 models_app = typer.Typer(help="查看、测试已配置的大模型。不带子命令时列出当前配置。", invoke_without_command=True)
 app.add_typer(models_app, name="models")
+skills_app = typer.Typer(help="查看、验证 skill（不经过后台）。", no_args_is_help=True)
+app.add_typer(skills_app, name="skills")
 console = Console()
 
 SERVER = os.environ.get("AIR_SERVER", "http://127.0.0.1:8765")
@@ -516,6 +518,57 @@ def models_init():
 
 
 # ====================================================================== air dev
+@skills_app.command("list")
+def skills_list():
+    """列出所有 skill：当前版本、已启用的版本。"""
+    from airesearcher.skills.loader import SkillLoader
+
+    loader = SkillLoader()
+    reg = loader.registry()
+    table = Table("名字", "当前版本", "已启用", "说明")
+    for name in loader.available():
+        cur = loader.current_version(name)
+        en = reg.get(name)
+        mark = f"[green]{en}[/]" if en == cur else f"[yellow]{en or '未登记'}（待验证）[/]"
+        table.add_row(name, cur, mark, escape(str(loader.meta(name).get("description", ""))))
+    console.print(table)
+    console.print(f"[dim]启用记录：{loader.registry_path}[/]")
+
+
+@skills_app.command("verify")
+def skills_verify(
+    name: str = typer.Argument(None, help="skill 名字；不写时配合 --all 验证全部"),
+    all_: bool = typer.Option(False, "--all", help="验证所有 skill"),
+    check: bool = typer.Option(False, "--check", help="只检查不修改 registry.yaml；版本未登记也算失败（CI 用）"),
+):
+    """用 skill 的 sample/ 小样例验证当前版本，通过后写进 skills/registry.yaml（详细设计 1 第 7.3 节）。"""
+    from airesearcher.skills.loader import SkillLoader
+
+    loader = SkillLoader()
+    if not name and not all_:
+        console.print("[red]请写 skill 名字，或用 --all[/]")
+        raise typer.Exit(2)
+    names = loader.available() if all_ else [name]
+    failed = False
+    for n in names:
+        rep = loader.verify(n, update_registry=not check)
+        console.print(f"[bold]{n}[/] {rep.version or ''}")
+        for label, ok, detail in rep.steps:
+            console.print(f"  {'[green]✓[/]' if ok else '[red]✗[/]'} {label}：{escape(detail)}")
+        if rep.registry_changed:
+            before, after = rep.registry_changed
+            console.print(f"  [green]已启用 {after}[/]（之前：{before or '未登记'}），"
+                          "请把 skills/registry.yaml 一起提交")
+        failed |= not rep.ok
+    if check:
+        for prob in loader.problems():
+            if all_ or prob.startswith(f"{name}："):
+                console.print(f"[red]✗ {escape(prob)}[/]")
+                failed = True
+    if failed:
+        raise typer.Exit(1)
+
+
 @dev_app.command("new-workspace")
 def dev_new_workspace(
     path: Path = typer.Argument(..., help="新工作区目录"),
@@ -523,19 +576,26 @@ def dev_new_workspace(
     idea: str = typer.Option("比较基线、主方法和消融在冒烟任务上的得分", "--idea"),
     task: str = typer.Option("tasks/smoke", "--task"),
     impl: str = typer.Option(None, "--impl", help='如 "idea=example" 或 "fake"'),
+    register: bool = typer.Option(False, "--register",
+                                  help="登记到后台，air serve 和 GUI 中能看到（重启 air serve 生效）"),
 ):
-    """创建一个可随便改的测试工作区（不登记到后台）。"""
+    """创建一个可随便改的测试工作区（默认不登记到后台）。"""
     from airesearcher.core.project import Project
+    from airesearcher.core.workspace import register_project
 
     if path.exists() and any(path.iterdir()):
         fail(f"{path} 已存在且不为空")
     if from_:
         shutil.copytree(from_, path, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".gitignore"))
-        console.print(f"[green]✓ 已从 {from_} 复制到 {path}[/]")
-        return
-    dev = {"stage_impl": _parse_impl(impl)} if impl else {}
-    p = Project.create(goal=idea, task=task, root=path, register=False, dev=dev)
-    console.print(f"[green]✓ 已创建工作区 {p.root}（项目 {p.project_id}）[/]")
+        p = Project.open(path)
+        console.print(f"[green]✓ 已从 {from_} 复制到 {path}（项目 {p.project_id}）[/]")
+    else:
+        dev = {"stage_impl": _parse_impl(impl)} if impl else {}
+        p = Project.create(goal=idea, task=task, root=path, register=False, dev=dev)
+        console.print(f"[green]✓ 已创建工作区 {p.root}（项目 {p.project_id}）[/]")
+    if register:
+        register_project(p.project_id, p.root)
+        console.print("已登记到后台：重启 air serve 后，air list 和 GUI 中就能看到它")
 
 
 @dev_app.command("check")

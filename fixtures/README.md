@@ -9,7 +9,7 @@
 air dev new-workspace /tmp/ws --from fixtures/sample_project
 ```
 
-在测试里用夹具 `sample_project`（`tests/conftest.py`），或 `airesearcher.testing.sample.copy_sample_project()`。
+在测试里：测试函数的参数写 `sample_project`，就会拿到一份样例项目的副本（例子见 [docs/开工指南/论文.md](../docs/开工指南/论文.md#测试怎么写)）。
 
 ## 里面有什么
 
