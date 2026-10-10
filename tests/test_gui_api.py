@@ -81,3 +81,58 @@ def test_sse_derived_messages():
                                                                                  "status": "labeled",
                                                                                  "label": "invalid"}
     assert derived(ev("stage.decision")) is None
+
+
+class FakeLogs:
+    """按调用次数返回日志的执行器替身：模拟“一行写了一半”和运行结束。"""
+
+    def __init__(self, data: bytes, steps: list[tuple[int, bool]]):
+        self.data, self.steps = data, steps  # 每次 logs() 时文件已写到第几个字节、运行是否已结束
+
+    def logs(self, run_id, stream, offset):
+        from airesearcher.runtime.executor import LogChunk
+
+        size, ended = self.steps.pop(0) if len(self.steps) > 1 else self.steps[0]
+        part = self.data[offset:size]
+        end = offset + len(part)
+        return LogChunk(text=part.decode("utf-8"), next_offset=end, eof=ended and end >= size)
+
+    def status(self, run_id):
+        from airesearcher.core.models.run import RunState, RunStatus
+
+        return RunStatus(run_id=run_id, state=RunState.succeeded, host="h")
+
+
+def test_log_stream_lines_and_resume():
+    from airesearcher.server.sse import RunLogStream
+
+    data = "第一行\nsecond li".encode() + b"ne\nlast"
+    first = len("第一行\nsecond li".encode())
+    ls = RunLogStream(FakeLogs(data, [(first, False), (len(data), True)]), "r-1")
+    msgs, done = ls.poll()
+    assert [d for _, d in parse(msgs)] == [{"text": "第一行"}] and not done  # 半行先不推
+    msgs, done = ls.poll()
+    assert parse(msgs) == [("line", {"text": "second line"}), ("line", {"text": "last"}),
+                           ("end", {"run_id": "r-1", "status": "succeeded"})] and done
+    # 断线重连：从第一行结束处继续，不重复
+    resumed = RunLogStream(FakeLogs(data, [(len(data), True)]), "r-1", offset=len("第一行\n".encode()))
+    assert [d["text"] for e, d in parse(resumed.poll()[0]) if e == "line"] == ["second line", "last"]
+
+
+def test_log_stream_endpoint(client):
+    c = client
+    pid = create(c)
+    wait_state(c, pid, "IdeaPending")
+    decide(c, pid)
+    wait_state(c, pid, "PlanPending")
+    decide(c, pid)
+    wait_state(c, pid, "LogPending", timeout=90)
+    rid = c.get(f"/api/projects/{pid}/runs").json()[0]["run_id"]
+    with c.stream("GET", f"/api/projects/{pid}/runs/{rid}/logs/stream") as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        body = "".join(r.iter_text())
+    events = parse([m for m in body.split("\n\n") if m.strip()])
+    assert events[-1] == ("end", {"run_id": rid, "status": "succeeded"})
+    whole = c.get(f"/api/projects/{pid}/runs/{rid}/logs").json()["text"]
+    assert [d["text"] for e, d in events if e == "line"] == whole.rstrip("\n").split("\n")
+    assert c.get(f"/api/projects/{pid}/runs/r-nope/logs/stream").status_code == 404

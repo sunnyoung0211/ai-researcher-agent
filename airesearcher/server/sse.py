@@ -11,7 +11,10 @@
 
 SSE 只做“通知”，REST 才是数据来源。断线重连时浏览器自动带 Last-Event-ID（= 事件 seq），服务端补发之后的 event。
 
-运行日志的逐行推送在 routes/runs.py（`/runs/{run_id}/logs/stream`）。
+运行日志的逐行推送见 RunLogStream（路由在 routes/runs.py 的 `/runs/{run_id}/logs/stream`）：
+每行一条 `line` 消息 `{text}`，`id:` 是这一行结束处的字节位置（断线重连时从这里继续）；
+运行结束且日志读完后推一条 `end` 消息 `{run_id, status}` 并关闭连接——浏览器收到 `end` 后要调用 `close()`，
+否则 EventSource 会自动重连（重连后会立刻再收到 `end`，不会重复推日志）。
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from .manager import ProjectManager
 router = APIRouter(prefix="/api/projects/{pid}", tags=["stream"])
 POLL_SECONDS = 1.0
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+LOG_CHUNK_BYTES = 1 << 20  # LocalExecutor.logs() 一次最多读这么多
 
 APPROVAL_STATUS = {"approval.requested": "pending", "approval.superseded": "superseded"}
 QUESTION_STATUS = {"question.asked": "pending", "question.answered": "answered", "question.withdrawn": "withdrawn"}
@@ -104,6 +108,34 @@ class ProjectStream:
                 out.append(sse_message("run", {"run_id": rid, "status": state}))
         self.runs = now_runs
         return out
+
+
+class RunLogStream:
+    """一个运行日志订阅。poll() 返回 (消息列表, 是否结束)。只推完整的行；运行结束后把最后半行也推出去。"""
+
+    def __init__(self, executor, run_id: str, stream: str = "stdout", offset: int = 0):
+        self.executor, self.run_id, self.stream, self.offset = executor, run_id, stream, offset
+        self.done = False
+
+    def poll(self) -> tuple[list[str], bool]:
+        if self.done:
+            return [], True
+        out: list[str] = []
+        chunk = self.executor.logs(self.run_id, self.stream, self.offset)  # 一次最多读 1 MB
+        text = chunk.text
+        lines = text.split("\n")
+        rest = lines.pop()  # 最后一段没有换行：还没写完，下次再读（除非运行已结束，或一行超过 1 MB）
+        for line in lines:
+            self.offset += len(line.encode("utf-8")) + 1
+            out.append(sse_message("line", {"text": line}, id=self.offset))
+        if rest and (chunk.eof or not lines and chunk.next_offset - self.offset >= LOG_CHUNK_BYTES):
+            self.offset = chunk.next_offset
+            out.append(sse_message("line", {"text": rest}, id=self.offset))
+        if chunk.eof and self.offset >= chunk.next_offset:
+            status = self.executor.status(self.run_id).state.value
+            out.append(sse_message("end", {"run_id": self.run_id, "status": status}, id=self.offset))
+            self.done = True
+        return out, self.done
 
 
 @router.get("/stream")
