@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.4（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`。改动汇总见附录 B）  
+**文档版本：** v0.4（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`；v0.5 测试替身 FakeExecutor / FakeLiterature、skill 版本登记与验证。改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -89,7 +89,7 @@ airesearcher/
 │   ├── runs.py            # 实验：读取运行目录与汇总结果
 │   └── evidence.py        # 论文：evidence.check()、证据链组装
 ├── stages/fakes/          # v0.2：四个阶段的假实现（idea/plan/experiment/writing），格式与真实实现相同
-└── testing/               # 假实现：FakeLLM；样例项目取用 sample.py（即 temp_project）；契约检查 contracts.py。FakeExecutor、FakeLiterature 待补
+└── testing/               # 假实现：FakeLLM；样例项目取用 sample.py（即 temp_project）；契约检查 contracts.py；v0.5：FakeExecutor、FakeLiterature
 ```
 
 依赖规则：`core` 不导入 `engine`、`stages`、`server`；`stages/*` 之间互不导入，需要别的阶段的数据时通过 `services/*` 读取；`services/*` 只依赖 `core`；`cli` 只通过 HTTP 调用 `server`（`air dev ...` 调试命令除外，见 8.2）。CI 用 `import-linter` 检查这几条。
@@ -1116,7 +1116,7 @@ max_parallel: 1                     # GPU 串行；CPU 任务可设 2
 - [ ] 预算与权限守卫接入网关和执行器
 - [ ] `tool_loop()`（实验的编码 Agent 周中要用）
 - [ ] 写接口、SSE、CLI 全部命令
-- [ ] skill 加载器与 `air skills verify`
+- [x] skill 加载器与 `air skills verify`
 - [ ] **周中：** CLI 跑通全流程（与实验同学一起）
 - [ ] **周末：** 与 GUI 同学联调，达成第 2 周检查点
 
@@ -1180,11 +1180,11 @@ air dev run-stage idea --workspace /tmp/ws --steps 3
 | 5.6 | 启动核对也会补收“后台停机期间已结束、但还没收集”的运行 |
 | 6.1 | v0.4：模型配置改为三层（仓库默认 / 用户 `${AIR_HOME}/models.yaml` / 项目），按“角色 → 阶段 → 全局档位”选择；Key 只在环境变量或 `${AIR_HOME}/.env`；新增 `air models`、`/api/models`；默认网络白名单加入 LLM 接口域名；价格兜底表按当前 Claude 价格更新 |
 | 6.5 | v0.4：`tool_loop()` 已实现，`@tool` 增加 `target` 参数（指明哪个参数是权限检查的目标）。用真实模型的多轮工具调用测试在 `tests/test_llm_real.py`（需设置 `AIR_REAL_LLM=1` 和 Key，CI 中不运行） |
-| 7 | skill 加载器为最小版本：`load()`、`instructions`、`path()`、`validate()`、`requires` 检查；`registry.yaml` 与 `air skills verify` 待做 |
+| 7 | v0.5：`skills/registry.yaml` 记录每个 skill 启用的版本，`load()` 遇到 skill.yaml 版本与登记不一致时报 `SkillNotVerified`（开发时可设 `AIR_SKILLS_UNVERIFIED=1`）。`air skills verify <名字>` 的步骤：加载并检查依赖 → 若有 `sample/run.py`，调用 `run(skill, input_dir, out_dir)`，产出与 `sample/expected/` 比对（`.json` 比内容，其他文本逐行比、忽略换行符差异，图片和 PDF 只要求存在）；没有 `run.py` 时直接检查 `expected/` → 运行检查函数 → 可选的 `sample/bad/`（故意写错的输出）必须每个都被检查函数发现。全部通过才写入 registry。`air skills verify --all --check` 只检查不修改，CI 中运行；`air skills list` 列出版本 |
 | 8.2 | 见上文 v0.2 约定；`air project rollback`、`air export`、`air cancel-run`、`air dev reindex` 尚未实现 |
 | 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`；SSE 为每秒轮询的简化版，只推 `state` 和 `event`（审批、问题、运行的变化都以 `event` 形式出现）；`/templates`、`/export`、`/runs/{id}/label`、`/runs/{id}/logs/stream` 尚未实现 |
 | 10.2 | v0.3：样例项目已提供，由 `fixtures/build_sample.py` 用假实现真实跑一遍生成（而不是手写），说明见 `fixtures/README.md`。与原表的差别：引擎不允许“有未决日志审批时提交手稿”，所以样例的状态是**日志已批准、手稿待审批**；工作区 `.git` 不随样例提交（`run.json` 中的 `code_commit` 因此无法检出） |
-| 10.3 | v0.3：`temp_project` 实现为 `airesearcher.testing.sample.copy_sample_project()` 和 pytest 夹具 `sample_project`；`FakeExecutor`、`FakeLiterature` 待补 |
+| 10.3 | v0.3：`temp_project` 实现为 `airesearcher.testing.sample.copy_sample_project()` 和 pytest 夹具 `sample_project`。v0.5：`testing/fake_executor.py` 的 `FakeExecutor` 继承 `LocalExecutor`，只替换 `submit()`（立即写好 `status.json`、`metrics.jsonl`、日志和 `resources.json`），其余方法沿用，因此运行目录、档案和记账与真实执行一致；结果用 `FakeOutcome` 按 run_id / task_key / 实验编号 / kind / `*` 指定，也可传函数。`testing/fake_literature.py` 的 `FakeLiterature` 实现详细设计 2 第 5.2 节的 `search()` / `get()`，数据在 `fixtures/literature_snapshot.json`（14 条真实论文元数据，摘要为自写概括；BERT 同时有预印本和正式版，用来测去重） |
 | 11 | v0.3：契约检查写在 `airesearcher/testing/contracts.py`（按提供方分组），契约测试在 `tests/contracts/`（每位提供方一个文件），组员可用 `air dev check <项目目录>` 自查 |
 | 跨平台 | v0.3：支持 Windows。项目锁在 Windows 上用 `msvcrt.locking`；进程管理统一用 `psutil`（新增依赖），不再用 `os.kill(pid, 0)`、`killpg`、`ps`、`resource`；所有文本文件读写显式使用 UTF-8；子进程设置 `PYTHONIOENCODING=utf-8`；Windows 上替换正被读取的文件会短暂失败，原子写和读取都带重试 |
 | 12 | 批量运行工具与 auto-approve 策略：引擎已有 `auto_approve_pending()`，`eval/batch.py` 待做 |
