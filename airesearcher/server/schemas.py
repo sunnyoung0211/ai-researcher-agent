@@ -104,6 +104,11 @@ class EditRequest(BaseModel):
     request_id: str = ""
 
 
+class RollbackRequest(BaseModel):
+    checkpoint_id: str
+    request_id: str = ""
+
+
 class LabelRequest(BaseModel):
     label: Literal["trusted", "suspicious", "invalid"]
     reason: str = ""

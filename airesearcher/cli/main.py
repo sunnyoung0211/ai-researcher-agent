@@ -425,6 +425,33 @@ def reopen(pid: str = typer.Argument(None)):
 
 
 @app.command()
+def checkpoints(pid: str = typer.Argument(None),
+                all_: bool = typer.Option(False, "--all", help="也列出最近的普通检查点（默认只列状态切换时的里程碑）")):
+    """列出可以回滚到的检查点。"""
+    pid = resolve_pid(pid)
+    rows = api("GET", f"/api/projects/{pid}/checkpoints")
+    rows = rows if all_ else [r for r in rows if r["milestone"]]
+    t = Table("检查点", "保存时间", "当时的状态", "里程碑")
+    for r in rows:
+        t.add_row(r["checkpoint_id"], r["saved_at"][:19].replace("T", " "), L.label(L.STATE, r["state"]),
+                  "✓" if r["milestone"] else "")
+    console.print(t)
+    console.print("回滚：air rollback <检查点>（项目正在工作时先 air pause）")
+
+
+@app.command()
+def rollback(checkpoint_id: str = typer.Argument(..., help="检查点编号，如 ck-000012（air checkpoints 查看）"),
+             pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """回到历史检查点（项目正在工作时须先 air pause）。不删除任何产物或运行，之后用 air resume 从那里重新开始。"""
+    pid = resolve_pid(pid)
+    st = api("POST", f"/api/projects/{pid}/rollback", json={"checkpoint_id": checkpoint_id, "request_id": rid()})
+    note = st["blocking_reason"] or L.label(L.STATE, st["state"])
+    console.print(f"[green]✓ 已回滚到 {checkpoint_id}[/]：{escape(note)}")
+    if st["state"] == "Paused":
+        console.print("确认无误后运行：air resume")
+
+
+@app.command()
 def runs(pid: str = typer.Argument(None)):
     """列出实验运行。"""
     pid = resolve_pid(pid)

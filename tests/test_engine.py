@@ -195,6 +195,8 @@ def test_checkpoint_history_and_atomic(project):
     from airesearcher.engine import checkpoint as ckpt
 
     hist = ckpt.history(project.root)
-    assert len(hist) == 20
+    recent = [b for b in ckpt.briefs(project.root) if not b.milestone]
+    assert len(recent) == 20  # 普通检查点只保留最近 20 个
+    assert hist[0] == "ck-000001" and ckpt.briefs(project.root)[-1].milestone  # 第一个（状态切换）作为里程碑保留
     assert ckpt.load(project.root).checkpoint_id == hist[-1]
     assert not list((project.root / ".state").glob("*.tmp"))

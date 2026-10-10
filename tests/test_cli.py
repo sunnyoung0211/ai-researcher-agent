@@ -167,3 +167,15 @@ def test_export_command(sample_server, tmp_path):
     out = tmp_path / "paper.zip"
     assert "已导出" in run("export", "-o", str(out))
     assert any(n.endswith("ARCHIVE_INDEX.md") for n in zipfile.ZipFile(out).namelist())
+
+
+def test_checkpoints_and_rollback(sample_server):
+    out = run("checkpoints", "--all")
+    assert "ck-" in out and "air rollback" in out
+    from airesearcher.engine import checkpoint as ckpt
+
+    oldest = ckpt.briefs(sample_server.root)[-1].checkpoint_id
+    out = run("rollback", oldest)
+    assert f"已回滚到 {oldest}" in out and "air resume" in out
+    r = runner.invoke(cli.app, ["rollback", "ck-999999"])
+    assert r.exit_code == 1 and "找不到检查点" in r.output
