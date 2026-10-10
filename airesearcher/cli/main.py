@@ -31,6 +31,8 @@ dev_app = typer.Typer(help="开发调试命令（不经过后台，直接操作�
 app.add_typer(dev_app, name="dev")
 models_app = typer.Typer(help="查看、测试已配置的大模型。不带子命令时列出当前配置。", invoke_without_command=True)
 app.add_typer(models_app, name="models")
+skills_app = typer.Typer(help="查看、验证 skill（不经过后台）。", no_args_is_help=True)
+app.add_typer(skills_app, name="skills")
 console = Console()
 
 SERVER = os.environ.get("AIR_SERVER", "http://127.0.0.1:8765")
@@ -516,6 +518,57 @@ def models_init():
 
 
 # ====================================================================== air dev
+@skills_app.command("list")
+def skills_list():
+    """列出所有 skill：当前版本、已启用的版本。"""
+    from airesearcher.skills.loader import SkillLoader
+
+    loader = SkillLoader()
+    reg = loader.registry()
+    table = Table("名字", "当前版本", "已启用", "说明")
+    for name in loader.available():
+        cur = loader.current_version(name)
+        en = reg.get(name)
+        mark = f"[green]{en}[/]" if en == cur else f"[yellow]{en or '未登记'}（待验证）[/]"
+        table.add_row(name, cur, mark, escape(str(loader.meta(name).get("description", ""))))
+    console.print(table)
+    console.print(f"[dim]启用记录：{loader.registry_path}[/]")
+
+
+@skills_app.command("verify")
+def skills_verify(
+    name: str = typer.Argument(None, help="skill 名字；不写时配合 --all 验证全部"),
+    all_: bool = typer.Option(False, "--all", help="验证所有 skill"),
+    check: bool = typer.Option(False, "--check", help="只检查不修改 registry.yaml；版本未登记也算失败（CI 用）"),
+):
+    """用 skill 的 sample/ 小样例验证当前版本，通过后写进 skills/registry.yaml（详细设计 1 第 7.3 节）。"""
+    from airesearcher.skills.loader import SkillLoader
+
+    loader = SkillLoader()
+    if not name and not all_:
+        console.print("[red]请写 skill 名字，或用 --all[/]")
+        raise typer.Exit(2)
+    names = loader.available() if all_ else [name]
+    failed = False
+    for n in names:
+        rep = loader.verify(n, update_registry=not check)
+        console.print(f"[bold]{n}[/] {rep.version or ''}")
+        for label, ok, detail in rep.steps:
+            console.print(f"  {'[green]✓[/]' if ok else '[red]✗[/]'} {label}：{escape(detail)}")
+        if rep.registry_changed:
+            before, after = rep.registry_changed
+            console.print(f"  [green]已启用 {after}[/]（之前：{before or '未登记'}），"
+                          "请把 skills/registry.yaml 一起提交")
+        failed |= not rep.ok
+    if check:
+        for prob in loader.problems():
+            if all_ or prob.startswith(f"{name}："):
+                console.print(f"[red]✗ {escape(prob)}[/]")
+                failed = True
+    if failed:
+        raise typer.Exit(1)
+
+
 @dev_app.command("new-workspace")
 def dev_new_workspace(
     path: Path = typer.Argument(..., help="新工作区目录"),

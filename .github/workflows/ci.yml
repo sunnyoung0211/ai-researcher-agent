@@ -24,6 +24,8 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: lint-imports
+      - name: skill 验证（每个 skill 的当前版本都要通过 air skills verify）
+        run: air skills verify --all --check
 
   test:
     name: 测试（${{ matrix.os }}，Python ${{ matrix.python }}）
