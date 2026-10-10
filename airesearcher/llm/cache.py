@@ -19,9 +19,10 @@ class LLMCache:
         self.dir = directory or (air_home() / "llm_cache")
 
     @staticmethod
-    def key(model: str, messages: list[dict], schema: str | None, temperature: float | None) -> str:
-        blob = json.dumps({"model": model, "messages": messages, "schema": schema, "tools": None,
-                           "temperature": temperature}, sort_keys=True, ensure_ascii=False)
+    def key(model: str, messages: list[dict], schema: str | None, temperature: float | None,
+            tools: list[dict] | None = None) -> str:
+        blob = json.dumps({"model": model, "messages": messages, "schema": schema, "tools": tools,
+                           "temperature": temperature}, sort_keys=True, ensure_ascii=False, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()
 
     def get(self, key: str) -> dict:

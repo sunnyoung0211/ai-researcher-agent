@@ -1,10 +1,49 @@
-# 模型分层与路由（详细设计 1 第 6.1 节）。项目可在 project.yaml 的 models 中覆盖。
-# 模型名用 LiteLLM 的 provider/model 格式，换供应商只改这里。具体型号第 1 周用小样本比较后更新。
+# 模型配置：仓库默认值（详细设计 1 第 6.1 节）。
+#
+# 每个人自己的模型和 Key 写在 ${AIR_HOME}/models.yaml（默认 ~/air/models.yaml），会覆盖这里的同名设置；
+# 运行 `air models init` 生成模板，`air models` 查看当前生效的配置，`air models test <名字>` 试调用。
+# 项目还可以在 project.yaml 的 models 中再覆盖（结构相同）。
+#
+# 注意：
+# - model 用 LiteLLM 的 provider/model 写法，换供应商只改这里，代码不用动；
+# - key_env 只写环境变量名。Key 本身放在环境变量或 ${AIR_HOME}/.env 里，绝不写进任何配置文件；
+# - temperature 不写 = 不发送。较新的 Claude 模型（Opus 5.5 / Sonnet 5.5 / Haiku 5.5）不接受非默认的 temperature；
+# - 第三方中转站（OpenAI 兼容接口）：写 model: openai/<模型名> 并设置 api_base（只写模型名也会自动按 openai/ 处理），
+#   例：relay-gpt: {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY, price: [输入, 输出]}
+#   price 是中转站的价格（美元 / 百万 token），用于预算记账；不写时按偏高的默认价估算；
+# - 这里登记的模型的接口域名，网关调用时视为已授权，不需要再加到每个项目的网络白名单；
+# - 阶段代码只请求档位（fast / strong）或角色名，不写具体模型名。
+
+models:
+  claude-fast:
+    model: anthropic/claude-haiku-5-5
+    key_env: ANTHROPIC_API_KEY
+    max_tokens: 4096
+    description: 便宜、快，适合大批量阅读和筛选
+  claude-strong:
+    model: anthropic/claude-sonnet-5-5
+    key_env: ANTHROPIC_API_KEY
+    max_tokens: 8192
+    description: 写作、编码、核验
+  claude-opus:
+    model: anthropic/claude-opus-5-5
+    key_env: ANTHROPIC_API_KEY
+    max_tokens: 16000
+    description: 最强（也最贵），需要时在 roles / stages 中指定
+  gpt-mini:
+    model: openai/gpt-5-mini
+    key_env: OPENAI_API_KEY
+    max_tokens: 4096
+    description: OpenAI 的便宜模型（备用或对比）
+
 tiers:
-  fast:   {model: anthropic/claude-haiku-5-5,  max_tokens: 4096, temperature: 0.2}
-  strong: {model: anthropic/claude-sonnet-5-5, max_tokens: 8192, temperature: 0.2}
-roles:                       # 可选：按角色覆盖分层
+  fast: claude-fast
+  strong: claude-strong
+
+stages: {}
+
+roles:                 # 可以写档位名，也可以写模型别名
   lit.coordinator: strong
   exp.coder: strong
-fallbacks:                   # 主模型连续失败时改用
-  fast: []
+
+fallbacks: {}          # 例：{claude-fast: [gpt-mini]}

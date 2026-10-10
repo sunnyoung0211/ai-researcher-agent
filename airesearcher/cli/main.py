@@ -29,6 +29,8 @@ app = typer.Typer(help="AI Researcher Agent 命令行。先运行 air serve 启�
                   no_args_is_help=True, add_completion=False, rich_markup_mode="rich")
 dev_app = typer.Typer(help="开发调试命令（不经过后台，直接操作工作区）。", no_args_is_help=True)
 app.add_typer(dev_app, name="dev")
+models_app = typer.Typer(help="查看、测试已配置的大模型。不带子命令时列出当前配置。", invoke_without_command=True)
+app.add_typer(models_app, name="models")
 console = Console()
 
 SERVER = os.environ.get("AIR_SERVER", "http://127.0.0.1:8765")
@@ -450,6 +452,67 @@ def logs(args: list[str] = typer.Argument(..., help="[项目编号] 运行编号
         if not follow or c["eof"]:
             break
         time.sleep(1)
+
+
+# ====================================================================== air models
+def _key_mark(v: bool | None) -> str:
+    return {True: "[green]✓ 已设置[/]", False: "[red]✗ 未设置[/]", None: "[dim]不需要[/]"}[v]
+
+
+@models_app.callback()
+def models_main(ctx: typer.Context, pid: str = typer.Option(None, "-p", "--project",
+                                                             help="显示某个项目实际使用的模型（含项目覆盖）")):
+    """列出已登记的模型、Key 是否已设置、每个阶段实际使用的模型。"""
+    if ctx.invoked_subcommand is not None:
+        return
+    info = api("GET", "/api/models", params={"project_id": pid} if pid else None)
+    t = Table("名字", "模型", "Key", "说明")
+    for mdl in info["models"]:
+        key = _key_mark(mdl["key_set"]) + (f" [dim]({mdl['key_env']})[/]" if mdl["key_env"] else "")
+        t.add_row(mdl["alias"], mdl["model"], key, escape(mdl["description"] or (mdl["api_base"] or "")))
+    console.print(t)
+    tiers = sorted({tier for a in info["assignments"].values() for tier in a})
+    t2 = Table("阶段", *tiers, title="每个阶段实际使用的模型" + (f"（项目 {pid}）" if pid else ""))
+    for stage, row in info["assignments"].items():
+        t2.add_row(stage, *[row[x]["alias"] or "[red]未配置[/]" for x in tiers])
+    console.print(t2)
+    if info["roles"]:
+        console.print("按角色指定：" + "，".join(f"{k} → {v}" for k, v in info["roles"].items()))
+    for w in info["warnings"]:
+        console.print(f"[yellow]⚠ {escape(w)}[/]")
+    files = info["config_files"]
+    console.print(f"[dim]配置文件：{files['user']}（我的）· {files['repo']}（默认）· Key：{files['dotenv']}[/]")
+    console.print("试调用：[bold cyan]air models test <名字>[/]   生成配置模板：[bold cyan]air models init[/]")
+
+
+@models_app.command("test")
+def models_test(alias: str = typer.Argument(..., help="模型名字，如 claude-fast"),
+                pid: str = typer.Option(None, "-p", "--project")):
+    """用一次极短的调用检查模型能否使用（会产生极少量费用）。"""
+    console.print(f"正在调用 {alias} ……")
+    r = api("POST", f"/api/models/{alias}/test", params={"project_id": pid} if pid else None,
+            json={"request_id": rid()})
+    if r["ok"]:
+        console.print(f"[bold green]✓ {alias}（{r['model']}）可以使用[/]：回复 {escape(r['reply'])!r}，"
+                      f"{r['seconds']} 秒，{r['input_tokens']}+{r['output_tokens']} tokens，约 ${r['usd']:.5f}")
+    else:
+        console.print(f"[bold red]✗ {alias} 调用失败[/]：{escape(r.get('error', ''))}")
+        raise typer.Exit(1)
+
+
+@models_app.command("init")
+def models_init():
+    """生成我的模型配置 ~/air/models.yaml 和 Key 文件 ~/air/.env 的模板（已存在则不覆盖）。"""
+    from airesearcher.llm.models import DOTENV_TEMPLATE, USER_TEMPLATE, dotenv_path, user_config_path
+
+    for path, text in ((user_config_path(), USER_TEMPLATE), (dotenv_path(), DOTENV_TEMPLATE)):
+        if path.exists():
+            console.print(f"[dim]已存在，未修改：{path}[/]")
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        console.print(f"[green]✓ 已生成 {path}[/]")
+    console.print("下一步：在 .env 里填上 Key（改完立即生效，不用重启后台）→ air models 查看 → air models test <名字>")
 
 
 # ====================================================================== air dev
