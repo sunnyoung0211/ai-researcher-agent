@@ -7,8 +7,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from airesearcher.core import templates
 from airesearcher.core.errors import NotFound
+from airesearcher.core.fsutil import append_jsonl, now
 from airesearcher.core.models.approval import ApprovalBrief
+from airesearcher.core.models.run import RunLabel
+from airesearcher.core.models.template import TemplateInfo
 from airesearcher.core.project import Project
 from airesearcher.core.workspace import air_home, load_registry
 from airesearcher.engine.engine import ProjectEngine
@@ -23,7 +27,7 @@ from airesearcher.engine.states import (
 )
 from airesearcher.runtime.local import LocalExecutor
 from airesearcher.services.runs import ACTIVE as ACTIVE_RUN_STATES
-from airesearcher.services.runs import list_runs
+from airesearcher.services.runs import RUN_LABELS, list_runs, load_labels, load_run
 from airesearcher.stages import STAGE_FOR_STATE
 
 from .schemas import CreateProject, ProjectStatus, ProjectSummary
@@ -39,6 +43,7 @@ class ProjectManager:
         self._create_requests: dict[str, str] = {}
         self._lock = threading.RLock()
         self.startup_report: dict[str, list] = {}
+        self._template_requests: dict[str, TemplateInfo] = {}
 
     # ---------------------------------------------------------------- 生命周期
     def startup(self) -> None:
@@ -158,3 +163,35 @@ class ProjectManager:
             updated_at=ck.saved_at, root=str(p.root),
         )
 
+
+    # ---------------------------------------------------------------- 运行标注（详细设计 3 第 8.4 节）
+    def label_run(self, pid: str, run_id: str, label: str, reason: str = "", request_id: str = "",
+                  by: str = "user") -> RunLabel:
+        p = self.get(pid)
+        load_run(p.root, run_id, with_metrics=False)  # 运行不存在 → 404
+        with self._lock:
+            if request_id:
+                for row in reversed(list(load_labels(p.root).values())):
+                    if row.request_id == request_id:
+                        return row
+            row = RunLabel(run_id=run_id, label=label, reason=reason, by=by, ts=now(), request_id=request_id)
+            p.permissions.guard("write", RUN_LABELS, actor=by)
+            append_jsonl(p.root / RUN_LABELS, row.model_dump(mode="json"))
+            p.archive.put(RUN_LABELS, "other", p.root / RUN_LABELS, producer=by,
+                          note=f"{run_id} 标注为 {label}")
+            p.events.append("run.labeled", f"运行 {run_id} 被标注为 {label}" + (f"：{reason}" if reason else ""),
+                            actor=by, run_id=run_id, data={"label": label, "reason": reason})
+        return row
+
+    # ---------------------------------------------------------------- 模板
+    def upload_template(self, pid: str, data: bytes, filename: str, template_id: str | None = None,
+                        request_id: str = "") -> TemplateInfo:
+        p = self.get(pid)
+        with self._lock:
+            if request_id and request_id in self._template_requests:
+                return self._template_requests[request_id]
+            info = templates.import_zip(p, data, filename, template_id, actor="user")
+            if request_id:
+                self._template_requests[request_id] = info
+        self.engine(pid).wake()
+        return info

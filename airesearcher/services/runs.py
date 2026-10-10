@@ -25,6 +25,7 @@ from airesearcher.core.models.plan import Comparison, ExperimentPlan, parse_plan
 from airesearcher.core.models.run import (
     MetricRecord,
     Resources,
+    RunLabel,
     RunRecord,
     RunState,
     RunStatus,
@@ -34,6 +35,7 @@ from airesearcher.core.models.run import (
 from . import stats
 
 PLAN_ID = "plan/experiment_plan.md"
+RUN_LABELS = "artifacts/run_labels.jsonl"
 ACTIVE = {RunState.created, RunState.preparing, RunState.queued, RunState.running}
 
 
@@ -49,12 +51,25 @@ def _read_status(d: Path, run_id: str) -> RunStatus:
         return RunStatus(run_id=run_id, state=RunState.unknown, host="local")
 
 
+def load_labels(root: Path) -> dict[str, RunLabel]:
+    """人工标注：同一运行以最后一行为准。"""
+    out: dict[str, RunLabel] = {}
+    for row in read_jsonl(Path(root) / RUN_LABELS):
+        try:
+            lab = RunLabel.model_validate(row)
+        except ValueError:
+            continue
+        out[lab.run_id] = lab
+    return out
+
+
 def read_metrics(root: Path, run_id: str) -> list[MetricRecord]:
     rows = read_jsonl(Path(root) / "runs" / run_id / "metrics.jsonl")
     return [MetricRecord.model_validate(r) for r in rows]
 
 
-def load_run(root: Path, run_id: str, with_metrics: bool = True) -> RunView:
+def load_run(root: Path, run_id: str, with_metrics: bool = True,
+             labels: dict[str, RunLabel] | None = None) -> RunView:
     d = Path(root) / "runs" / run_id
     if not (d / "run.json").exists():
         raise NotFound(f"找不到运行 {run_id}")
@@ -63,7 +78,7 @@ def load_run(root: Path, run_id: str, with_metrics: bool = True) -> RunView:
     env = read_json(d / "environment.json") if (d / "environment.json").exists() else None
     return RunView(
         record=rec, status=_read_status(d, run_id), metrics=read_metrics(root, run_id) if with_metrics else [],
-        resources=res, environment=env,
+        resources=res, environment=env, label=(labels if labels is not None else load_labels(root)).get(run_id),
     )
 
 
@@ -74,11 +89,12 @@ def list_runs(
     out = []
     if not runs_dir.exists():
         return out
+    labels = load_labels(root)
     for d in sorted(runs_dir.iterdir()):
         if not (d / "run.json").exists():
             continue
         try:
-            rv = load_run(root, d.name, with_metrics=False)
+            rv = load_run(root, d.name, with_metrics=False, labels=labels)
         except (ValueError, NotFound):
             continue
         if experiment_id and rv.record.experiment_id != experiment_id:
@@ -190,6 +206,8 @@ def compute_aggregate(
             reason = "属于旧计划版本"
         elif rec.eval_condition != eval_condition:
             reason = f"eval_condition={rec.eval_condition}"
+        elif rv.label is not None and rv.label.label == "invalid":
+            reason = f"人工标注为无效：{rv.label.reason}".rstrip("：")
         fields = _run_fields(root, rv)
         if reason is None and any(fields.get(k) != v for k, v in comparison.filter.items()):
             continue
@@ -200,9 +218,11 @@ def compute_aggregate(
             excluded.append({"run_id": rec.run_id, "reason": reason})
             continue
         group = {k: fields.get(k) for k in comparison.group_by}
-        g = groups.setdefault(_norm(group), {"group": group, "values": [], "run_ids": []})
+        g = groups.setdefault(_norm(group), {"group": group, "values": [], "run_ids": [], "suspicious": []})
         g["values"].append(float(value))
         g["run_ids"].append(rec.run_id)
+        if rv.label is not None and rv.label.label == "suspicious":
+            g["suspicious"].append(rec.run_id)
 
     rows = []
     for key in sorted(groups):
@@ -211,7 +231,7 @@ def compute_aggregate(
         rows.append(AggregateRow(
             group=g["group"], metric=comparison.metric, n=d["n"], mean=d["mean"], std=d["std"], sem=d["sem"],
             ci95=d["ci95"], min=d["min"], max=d["max"], values=g["values"], run_ids=g["run_ids"],
-            outliers=d["outliers"],
+            outliers=d["outliers"], suspicious=g["suspicious"],
         ))
     contrasts = []
     for a in rows[1:]:
@@ -267,6 +287,9 @@ def aggregate_markdown(agg: Aggregate) -> str:
         lines += ["", "| 对比 | 均值差 | Welch t | p |", "|---|---|---|---|"]
         for c in agg.contrasts:
             lines.append(f"| {_norm(c.a)} vs {_norm(c.b)} | {c.diff_mean:+.4f} | {c.welch_t} | {c.p_value} |")
+    suspicious = [rid for r in agg.rows for rid in r.suspicious]
+    if suspicious:
+        lines += ["", f"人工标注为可疑、但仍计入统计的运行：{', '.join(suspicious)}"]
     if agg.excluded:
         lines += ["", f"排除的运行：{len(agg.excluded)} 个（" +
                   "；".join(f"{e['run_id']}: {e['reason']}" for e in agg.excluded[:5]) + "）"]

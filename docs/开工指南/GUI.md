@@ -41,23 +41,76 @@
 
 ## 现在能用的接口
 
+详细设计 5 第 8 节列的接口都有了。
+
 | 页面 | 接口（都以 `/api/projects/{pid}` 开头，除非另注） |
 |---|---|
-| P1 项目列表、P2 新建 | `GET /api/projects`、`POST /api/projects`、`GET /api/tasks` |
-| P3 项目总览 | `GET /`（状态、预算、待办、待回答的问题）、`GET /question`、`POST /question/answer`、`POST /actions`（暂停 / 继续 / 取消 / 重新打开）、`PATCH /budget`、`GET /events` |
+| P1 项目列表、P2 新建 | `GET /api/projects`、`POST /api/projects`、`GET /api/tasks`、`POST /templates`（上传模板） |
+| P3 项目总览 | `GET /`（状态、预算、待办、待回答的问题）、`GET /question`、`POST /question/answer`、`POST /actions`（暂停 / 继续 / 取消 / 重新打开）、`PATCH /budget`、`GET /events`、`GET /checkpoints` + `POST /rollback`（回滚，可选） |
 | P4、P5 审批 | `GET /approvals`、`GET /approvals/{aid}`（同时返回这一版 `target_content` 和上一版 `previous_content`，直接做差异对比）、`POST /approvals/{aid}/decision`、`GET /artifacts/content`、`GET /artifacts/versions` |
-| P6、P7 运行 | `GET /runs`、`GET /runs/{run_id}`、`GET /runs/{run_id}/logs?stream=stdout&offset=0`、`POST /runs/{run_id}/cancel` |
+| P6、P7 运行 | `GET /runs`、`GET /runs/{run_id}`、`GET /runs/{run_id}/logs`、`GET /runs/{run_id}/logs/stream`（实时日志）、`POST /runs/{run_id}/cancel`、`POST /runs/{run_id}/label`（标注可信 / 可疑 / 无效） |
 | P8 文献 | `GET /literature`、`GET /literature/{paper_id}` |
 | P9 图表 | `GET /figures`、`GET /files?path=...` |
-| P10、P11 论文与证据 | `GET /paper`、`GET /paper/pdf`、`GET /claims`、`GET /claims/{claim_id}/trace` |
-| P12、P13 文件与日志 | `GET /files`、`GET /events` |
+| P10、P11 论文与证据 | `GET /paper`、`GET /paper/pdf`、`GET /claims`、`GET /claims/{claim_id}/trace`、`GET /export?what=paper`（下载 zip） |
+| P12、P13、P14 | `GET /files`、`GET /events`、`GET /templates`、`POST /templates` |
 | 实时更新 | `GET /stream`（SSE） |
 
-**还没有、计划在 10-20 前补上的**：模板上传与列表（P2、P14 的 `/templates`）、导出 zip（`/export`）、日志逐行推送（`/runs/{run_id}/logs/stream`）、给运行加标签。
-在这之前：
+下面每条命令都可以在后台开着时（上一节第 2 步）直接运行，看看返回什么。把 `<pid>` 换成样例项目的编号，`<rid>` 换成 `GET /runs` 里的任意一个运行编号。
 
-- **实时日志**：每 2 秒请求一次 `GET /runs/{run_id}/logs?offset=<上次返回的 next_offset>`，把新内容接在后面；返回的 `eof` 为 `true` 时停止；
-- **SSE**：目前只推 `state` 和 `event` 两种消息（审批、问题、运行的变化都以 `event` 的形式出现）。按详细设计的原则，收到任何消息后重新请求 `GET /api/projects/{pid}` 即可，后台补全其他消息类型后你的代码不用改。
+**项目实时更新**：
+
+```bash
+curl -N "http://127.0.0.1:8765/api/projects/<pid>/stream?from_now=true"
+```
+
+先看到一条 `event: state` 和一条 `event: budget`，之后有变化才会再推（按 Ctrl+C 停止）。
+不加 `?from_now=true` 时会先把历史事件全部补推一遍。页面里这样写：
+
+```js
+const es = new EventSource(`/api/projects/${pid}/stream?from_now=true`)
+for (const t of ['state', 'approval', 'question', 'run', 'budget']) {
+  es.addEventListener(t, () => refreshSoon())     // 收到任何通知都重新请求 GET /api/projects/{pid}
+}
+```
+
+**实时日志**：
+
+```bash
+curl -N "http://127.0.0.1:8765/api/projects/<pid>/runs/<rid>/logs/stream"
+```
+
+每行日志是一条 `event: line`，最后是一条 `event: end`，然后连接自动断开。页面里**收到 `end` 后必须 `close()`**，否则浏览器会自动重连：
+
+```js
+const es = new EventSource(`/api/projects/${pid}/runs/${rid}/logs/stream`)
+es.addEventListener('line', (m) => lines.value.push(JSON.parse(m.data).text))
+es.addEventListener('end', () => es.close())
+```
+
+**标注运行**：
+
+```bash
+curl -X POST "http://127.0.0.1:8765/api/projects/<pid>/runs/<rid>/label" -H "Content-Type: application/json" -d "{\"label\": \"suspicious\", \"reason\": \"test\", \"request_id\": \"demo-1\"}"
+```
+
+返回 `{"run_id": ..., "label": "suspicious", ...}`；之后 `GET /runs` 的这一行多了 `"label": "suspicious"`。`label` 只能是 `trusted`、`suspicious`、`invalid`。
+
+**上传模板**（`tpl.zip` 换成任意一个含 `.tex` 文件的 zip）：
+
+```bash
+curl -X POST "http://127.0.0.1:8765/api/projects/<pid>/templates" -F file=@tpl.zip -F request_id=demo-2
+```
+
+返回 `{"template_id": "tpl-01", "version": 1, "in_use": true, "check": null, ...}`。`check` 在论文阶段检查完模板后才有内容。
+上传修好的新版本时多加一个字段 `-F template_id=tpl-01`，返回 `"version": 2`。网页里用 Element Plus 的 `el-upload`，字段名写 `file`。
+
+**导出**：
+
+```bash
+curl -o paper.zip "http://127.0.0.1:8765/api/projects/<pid>/export?what=paper"
+```
+
+得到一个 zip，里面有 `ARCHIVE_INDEX.md`、`paper/`、`artifacts/figures/`。网页里直接用链接：`<a :href="`/api/projects/${pid}/export?what=paper`">导出论文</a>`；`what=archive` 是整个研究档案。
 
 ## 提交审批时必须带的字段
 

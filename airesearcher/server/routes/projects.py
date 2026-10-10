@@ -11,6 +11,8 @@ from airesearcher.core.models.event import Event
 from airesearcher.core.models.project import Limit
 from airesearcher.core.models.question import Question
 from airesearcher.core.workspace import repo_root
+from airesearcher.engine import checkpoint as ckpt
+from airesearcher.engine.checkpoint import CheckpointBrief
 
 from ..deps import manager
 from ..manager import ProjectManager
@@ -21,6 +23,7 @@ from ..schemas import (
     CreateProject,
     ProjectStatus,
     ProjectSummary,
+    RollbackRequest,
     TaskInfo,
 )
 
@@ -62,6 +65,19 @@ def get_status(pid: str, m: ProjectManager = Depends(manager)) -> ProjectStatus:
 @router.post("/projects/{pid}/actions", response_model=ProjectStatus)
 def project_action(pid: str, body: ActionRequest, m: ProjectManager = Depends(manager)) -> ProjectStatus:
     m.engine(pid).request_action(body.action, body.request_id)
+    return m.status(pid)
+
+
+@router.get("/projects/{pid}/checkpoints", response_model=list[CheckpointBrief])
+def list_checkpoints(pid: str, m: ProjectManager = Depends(manager)) -> list[CheckpointBrief]:
+    """可回滚的检查点，从新到旧。milestone=true 的是状态切换时保存的，长期保留；其余只保留最近 20 个。"""
+    return ckpt.briefs(m.get(pid).root)
+
+
+@router.post("/projects/{pid}/rollback", response_model=ProjectStatus)
+def rollback(pid: str, body: RollbackRequest, m: ProjectManager = Depends(manager)) -> ProjectStatus:
+    """回到历史检查点（项目正在工作时须先暂停）。不删除任何产物或运行；之后选择“继续”从那里重新开始。"""
+    m.engine(pid).request_action("rollback", body.request_id, checkpoint_id=body.checkpoint_id)
     return m.status(pid)
 
 

@@ -16,6 +16,7 @@ RUN = {
     "created": "准备中", "preparing": "准备中", "queued": "排队中", "running": "运行中", "succeeded": "成功",
     "failed": "失败", "cancelled": "已取消", "unknown": "状态未知（需人工确认）",
 }
+RUN_LABEL = {"trusted": "可信", "suspicious": "可疑", "invalid": "无效"}
 FAILURE = {
     "nonzero_exit": "程序报错退出", "timeout": "超时", "cancelled": "已取消", "lost": "进程丢失（后台重启时发现）",
     "oom": "内存不足", "missing_metrics": "未输出必需指标", "wrapper_error": "运行包装器出错",

@@ -1,6 +1,6 @@
 # 详细设计 1：Agent 主干
 
-**文档版本：** v0.4（2026-10-08：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`；v0.5 测试替身 FakeExecutor / FakeLiterature、skill 版本登记与验证。改动汇总见附录 B）  
+**文档版本：** v0.6（2026-10-08 起：v0.2 按主干骨架实现同步；v0.3 增加跨平台、CI、样例项目与契约测试；v0.4 模型配置三层化、实现 `tool_loop()`；v0.5 测试替身 FakeExecutor / FakeLiterature、skill 版本登记与验证；v0.6 GUI 联调接口（SSE 全部消息类型、日志逐行推送、模板、导出、运行标注、回滚）。改动汇总见附录 B）  
 **编写日期：** 2026-10-08  
 **负责人：** ZHU YANG（组长）  
 **依据：** 《需求分析》v1.3、《概要设计》v0.2  
@@ -620,6 +620,13 @@ v0.2 增加的三个字段：`answer`（已回答、待交给阶段的 `Answer`�
 
 `air project rollback <pid> --to ck-000200`：只允许回到 `Paused` 状态下执行；把指定历史检查点复制为当前检查点并写事件。不删除任何产物或运行。回滚后阶段看到的 `approved` 和 `scratch` 恢复为当时的值，之后产生的产物仍在 `.archive/` 中，只是不再被引用。
 
+v0.6 实现说明：
+
+- 命令为 `air checkpoints [pid] [--all]` 和 `air rollback <ck> [-p pid]`；API 为 `GET /checkpoints`、`POST /rollback {checkpoint_id, request_id}`；
+- **里程碑检查点**：每步都存检查点、只保留最近 20 个，回滚能到的位置太近。状态发生变化的那次检查点另存到 `.state/milestones/`，不删除，回滚通常选它们；
+- **前提放宽**：引擎没有在工作（`Paused`、各 `*Pending`、`BudgetExhausted`、`Failed`、`Completed`）时都可以回滚；正在工作的先 `pause`。否则停在等待审批的项目（不能暂停）就无法回滚；
+- 回滚后：当前待审批标为 `superseded`、待回答问题撤回；项目停在 `Paused`，`resume_to` 为目标检查点的状态（目标在等待审批时回到对应的起草状态，重新提交）；目标是 `Completed` 时直接停在 `Completed`；当时的待回答问题不恢复；写 `project.rolled_back` 事件。
+
 ---
 
 ## 6. LLM 网关（`llm/`）
@@ -823,8 +830,10 @@ sk.ref                     # "scientific-plotting@1.0.0"，阶段写进产物元
 | `air approve <aid> [-m 意见]` / `air revise <aid> -m 意见` / `air reject <aid> -m 意见` | 提交审批决定 |
 | `air pause|resume|cancel <pid>`、`air reopen <pid>` | 项目控制 |
 | `air runs <pid>` / `air logs <pid> <run_id> [-f]` / `air cancel-run <pid> <run_id>` | 运行查看与控制 |
-| `air export <pid> [--what paper|archive]` | 导出 zip |
-| `air project rollback <pid> --to <ck>` | 回滚检查点 |
+| `air label <run_id> trusted|suspicious|invalid -m 原因` | 人工标注运行（v0.6；详细设计 3 第 8.4 节） |
+| `air template upload <zip> [--to tpl-01]` / `air template list` | 上传论文模板 / 查看模板版本与检查结果（v0.6） |
+| `air export <pid> [--what paper|archive] [-o 文件]` | 导出 zip |
+| `air project rollback <pid> --to <ck>` | 回滚检查点（v0.6 实现为 `air checkpoints` + `air rollback <ck>`，见 5.7） |
 | **`air dev run-stage <stage> --workspace <path> [--steps N] [--state S] [--auto-approve] [--fake-llm]`** | **不启动后台，直接在某个工作区上执行阶段的 `step()`，打印每步的 StepResult。阶段开发者最常用** |
 | `air dev new-workspace <path> [--from fixtures/sample_project] [--idea ... --task ... --impl idea=real]` | 复制一个可随便改的测试工作区；不给 `--from` 时新建一个（v0.2） |
 
@@ -958,7 +967,9 @@ class EvidenceTrace(BaseModel):      # 一条论断的完整追溯链
 | `run` | `{run_id, status}` |
 | `budget` | `BudgetStatus` |
 
-连接建立时先推一次完整 `state`。客户端断线重连时带 `Last-Event-ID`（= 事件 `seq`），服务端补发之后的 `event`。GUI 每次收到 `state`/`approval`/`run` 后，按需重新拉取对应的 REST 数据——SSE 只做“通知”，REST 才是数据来源，这样 GUI 不必处理消息丢失。
+连接建立时先推一次完整 `state`。客户端断线重连时带 `Last-Event-ID`（= 事件 `seq`），服务端补发之后的 `event`。
+
+v0.6 实现说明：每秒检查一次。`approval` / `question` / `run` 由事件日志推出（`approval.status` 为 `pending` / 决定值 / `superseded`；`question.status` 为 `pending` / `answered` / `withdrawn`；`run.status` 为运行状态，加标签时为 `labeled` 并带 `label`）；包装器直接写 `status.json` 的变化（如开始运行）没有事件，通过比对活动运行的状态补推 `run`。连接建立时先推 `state` 和 `budget`，之后有变化才推。GUI 每次收到 `state`/`approval`/`run` 后，按需重新拉取对应的 REST 数据——SSE 只做“通知”，REST 才是数据来源，这样 GUI 不必处理消息丢失。
 
 ---
 
@@ -1181,8 +1192,8 @@ air dev run-stage idea --workspace /tmp/ws --steps 3
 | 6.1 | v0.4：模型配置改为三层（仓库默认 / 用户 `${AIR_HOME}/models.yaml` / 项目），按“角色 → 阶段 → 全局档位”选择；Key 只在环境变量或 `${AIR_HOME}/.env`；新增 `air models`、`/api/models`；默认网络白名单加入 LLM 接口域名；价格兜底表按当前 Claude 价格更新 |
 | 6.5 | v0.4：`tool_loop()` 已实现，`@tool` 增加 `target` 参数（指明哪个参数是权限检查的目标）。用真实模型的多轮工具调用测试在 `tests/test_llm_real.py`（需设置 `AIR_REAL_LLM=1` 和 Key，CI 中不运行） |
 | 7 | v0.5：`skills/registry.yaml` 记录每个 skill 启用的版本，`load()` 遇到 skill.yaml 版本与登记不一致时报 `SkillNotVerified`（开发时可设 `AIR_SKILLS_UNVERIFIED=1`）。`air skills verify <名字>` 的步骤：加载并检查依赖 → 若有 `sample/run.py`，调用 `run(skill, input_dir, out_dir)`，产出与 `sample/expected/` 比对（`.json` 比内容，其他文本逐行比、忽略换行符差异，图片和 PDF 只要求存在）；没有 `run.py` 时直接检查 `expected/` → 运行检查函数 → 可选的 `sample/bad/`（故意写错的输出）必须每个都被检查函数发现。全部通过才写入 registry。`air skills verify --all --check` 只检查不修改，CI 中运行；`air skills list` 列出版本 |
-| 8.2 | 见上文 v0.2 约定；`air project rollback`、`air export`、`air cancel-run`、`air dev reindex` 尚未实现 |
-| 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`；SSE 为每秒轮询的简化版，只推 `state` 和 `event`（审批、问题、运行的变化都以 `event` 形式出现）；`/templates`、`/export`、`/runs/{id}/label`、`/runs/{id}/logs/stream` 尚未实现 |
+| 8.2 | 见上文 v0.2 约定。v0.6：`air cancel-run <run_id>`、`air label`、`air template upload/list`、`air export`、`air checkpoints`、`air rollback <ck>` 已实现（`<pid>` 用 `-p` 指定，省略时用最近的项目）；回滚命令没有用 `air project rollback` 的写法，与 `air pause` 等保持一致；`air dev new-workspace --register` 把复制出的工作区登记到后台。`air dev reindex` 尚未实现 |
+| 9.2 | 新增 `GET /api/health`；审批详情多返回 `target_path`（产物在本机的位置），`extra` 中小的文本产物直接附带 `content`。v0.6：<br>• `POST /templates`：multipart，字段 `file`（zip）、可选 `template_id`（作为已有模板的新版本）、`request_id`；拒绝绝对路径、`..`、符号链接、没有 `.tex` 的 zip，zip 不超过 20 MB、解压后不超过 100 MB / 500 个文件；整个模板包在一个文件夹里时去掉这一层；另写 `upload.json`。`GET /templates` 返回 `{current, templates: [TemplateInfo], default_check}`，`TemplateInfo.check` 是论文阶段写的 `check.json`；<br>• `GET /export?what=paper|archive`：`paper` 含 `paper/`（`build/` 只保留 `main.pdf`、`compile_report.json`）、`artifacts/figures/`、`ARCHIVE_INDEX.md`；`archive` 是整个项目目录（不含 `.git/`、锁文件、`__pycache__`，不跟随符号链接）。`ARCHIVE_INDEX.md` 由 `services.evidence.archive_index()` 生成：图表 → 汇总 → 运行、汇总 → 运行（含排除和可疑）、论断 → 证据与核验结论、运行清单（含标注）、文献；<br>• `POST /runs/{id}/label`：写 `artifacts/run_labels.jsonl`（`RunLabel`，含 `request_id` 去重）并写 `run.labeled` 事件；运行列表和详情多返回 `label`；<br>• `GET /runs/{id}/logs/stream`：SSE，每行一条 `line` 消息 `{text}`，`id` 是该行结束处的字节位置（`Last-Event-ID` 或 `offset` 参数从这里继续）；运行结束且读完后推 `end` `{run_id, status}` 并关闭。客户端收到 `end` 要主动 `close()`；<br>• 新增 `GET /checkpoints`、`POST /rollback`（见 5.7） |
 | 10.2 | v0.3：样例项目已提供，由 `fixtures/build_sample.py` 用假实现真实跑一遍生成（而不是手写），说明见 `fixtures/README.md`。与原表的差别：引擎不允许“有未决日志审批时提交手稿”，所以样例的状态是**日志已批准、手稿待审批**；工作区 `.git` 不随样例提交（`run.json` 中的 `code_commit` 因此无法检出） |
 | 10.3 | v0.3：`temp_project` 实现为 `airesearcher.testing.sample.copy_sample_project()` 和 pytest 夹具 `sample_project`。v0.5：`testing/fake_executor.py` 的 `FakeExecutor` 继承 `LocalExecutor`，只替换 `submit()`（立即写好 `status.json`、`metrics.jsonl`、日志和 `resources.json`），其余方法沿用，因此运行目录、档案和记账与真实执行一致；结果用 `FakeOutcome` 按 run_id / task_key / 实验编号 / kind / `*` 指定，也可传函数。`testing/fake_literature.py` 的 `FakeLiterature` 实现详细设计 2 第 5.2 节的 `search()` / `get()`，数据在 `fixtures/literature_snapshot.json`（14 条真实论文元数据，摘要为自写概括；BERT 同时有预印本和正式版，用来测去重） |
 | 11 | v0.3：契约检查写在 `airesearcher/testing/contracts.py`（按提供方分组），契约测试在 `tests/contracts/`（每位提供方一个文件），组员可用 `air dev check <项目目录>` 自查 |

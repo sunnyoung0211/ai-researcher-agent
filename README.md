@@ -184,6 +184,11 @@ air answer skip
 | `air question` / `air answer <选项> [-m 文字]` | 查看 / 回答系统的问题 |
 | `air pause` / `air resume` / `air cancel` / `air reopen` | 暂停 / 继续 / 取消 / 重新打开已完成的项目 |
 | `air runs` / `air logs <运行编号> [-f]` | 查看实验运行 / 运行日志 |
+| `air cancel-run <运行编号>` | 取消一个正在跑的运行 |
+| `air label <运行编号> trusted\|suspicious\|invalid -m 原因` | 人工标注运行：无效的不计入汇总，可疑的计入但标出 |
+| `air template upload <zip>` / `air template list` | 上传论文模板 / 查看已上传的模板 |
+| `air export [--what paper\|archive] [-o 文件]` | 导出论文交付包或整个研究档案（zip，含 `ARCHIVE_INDEX.md`） |
+| `air checkpoints` / `air rollback <检查点>` | 查看可回滚的检查点 / 回滚（项目正在工作时先 `air pause`） |
 | `air models` / `air models test <名字>` / `air models init` | 查看已配置的大模型 / 试调用一次 / 生成配置模板（见第 9 节） |
 | `air dev new-workspace <目录>` / `air dev run-stage <阶段> --workspace <目录>` | 开发调试用（不经过后台，见第 5 节）；`new-workspace --from fixtures/sample_project --register` 让后台显示样例项目 |
 | `air dev check <目录>` | 检查项目里的交接文件是否符合约定格式 |
@@ -255,7 +260,7 @@ air dev check /tmp/ws
 | 部分 | 状态 |
 |---|---|
 | 流程引擎（状态机、检查点、重启恢复）、档案（版本、血缘、人工编辑检测）、审批、提问、预算、权限、事件日志 | **真实** |
-| 后台 API（FastAPI）、命令行 `air` | **真实**（SSE 推送是每秒轮询的简化版） |
+| 后台 API（FastAPI）、命令行 `air` | **真实**（SSE 每秒检查一次变化后推送） |
 | LLM 网关：`complete()`、工具调用循环 `tool_loop()`、按阶段选模型（提示文件、格式校验与重试、记账、调用日志、录制/回放） | **真实**；已用假模型测试，真实模型测试见第 9 节 |
 | 本地执行器 + 运行包装器、冒烟任务 `tasks/smoke` | **真实但精简**（没有环境 pip freeze、数据校验、GPU 串行），实验同学接手补全 |
 | 汇总统计 `services/runs.py`、引用核验 `services/literature.py` | **真实** |

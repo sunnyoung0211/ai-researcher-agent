@@ -53,6 +53,7 @@ from .states import (
     PENDING_STATES,
     REOPENABLE,
     RESUMABLE,
+    STATE_LABELS,
     advance_allowed,
 )
 
@@ -175,29 +176,67 @@ class ProjectEngine:
                 self._wake.wait(t.seconds)
 
     # ------------------------------------------------------------------ 用户操作
-    def request_action(self, action: str, request_id: str = "", timeout: float = 30.0) -> S:
-        """pause / resume / cancel / reopen。后台运行时交给引擎线程在两步之间执行。"""
+    def request_action(self, action: str, request_id: str = "", timeout: float = 30.0, **kw: Any) -> S:
+        """pause / resume / cancel / reopen / rollback(checkpoint_id=...)。后台运行时交给引擎线程在两步之间执行。"""
         if request_id and request_id in self._done_requests:
             return self._done_requests[request_id]
         if self.running and threading.current_thread() is not self._thread:
             fut: Future = Future()
-            self._actions.put((action, request_id, fut))
+            self._actions.put((action, request_id, kw, fut))
             self.wake()
             return fut.result(timeout=timeout)
-        return self._do_action(action, request_id)
+        return self._do_action(action, request_id, **kw)
 
     def _process_actions(self) -> None:
         while True:
             try:
-                action, rid, fut = self._actions.get_nowait()
+                action, rid, kw, fut = self._actions.get_nowait()
             except queue.Empty:
                 return
             try:
-                fut.set_result(self._do_action(action, rid))
+                fut.set_result(self._do_action(action, rid, **kw))
             except Exception as e:
                 fut.set_exception(e)
 
-    def _do_action(self, action: str, request_id: str) -> S:
+    def _rollback(self, checkpoint_id: str) -> None:
+        """回到历史检查点（详细设计 1 第 5.7 节）：恢复 approved、scratch 等，不删除任何产物或运行。
+
+        只能在引擎没有在工作时执行（已暂停、等待审批、预算用尽、出错、已完成）；正在工作的先暂停。
+        恢复后项目停在 Paused（目标检查点是 Completed 时停在 Completed），用户选择“继续”后从那里重新开始：
+        当时在等待审批的，回到对应的起草状态重新提交；当时的待回答问题不再恢复。
+        """
+        ck = self.ck
+        if ck.state in ACTIVE_STATES:
+            raise InvalidState(f"项目正在工作（{STATE_LABELS[ck.state]}），请先暂停再回滚：air pause")
+        old = ckpt.load_history(self.root, checkpoint_id)
+        if ck.pending_question:
+            self.project.questions.withdraw(ck.pending_question, f"项目回滚到 {checkpoint_id}")
+        if ck.pending_approval:
+            self.project.approvals.supersede(ck.pending_approval, f"项目回滚到 {checkpoint_id}")
+        if old.state in PENDING_STATES:
+            resume_to = DRAFTING_FOR_KIND[KIND_FOR_PENDING[old.state]]
+        elif old.state in ACTIVE_STATES:
+            resume_to = old.state
+        else:
+            resume_to = old.resume_to
+        new = old.model_copy(deep=True, update={
+            "checkpoint_id": ck.checkpoint_id, "pending_approval": None, "pending_question": None, "answer": None,
+            "rejected_approval": None, "consecutive_errors": 0, "last_event_seq": ck.last_event_seq,
+        })
+        if old.state == S.Completed:
+            new.state, new.resume_to, new.reason = S.Completed, None, ""
+        else:
+            new.state, new.resume_to = S.Paused, resume_to
+            new.reason = (f"已回滚到 {checkpoint_id}（当时：{STATE_LABELS[old.state]}），"
+                          "选择“继续”后从那里重新开始")
+        self.ck = new
+        self.project.events.append(
+            "project.rolled_back", f"回滚到检查点 {checkpoint_id}（当时状态：{STATE_LABELS[old.state]}）",
+            actor="user", data={"to": checkpoint_id, "state": old.state.value,
+                                "resume_to": resume_to.value if resume_to else None},
+        )
+
+    def _do_action(self, action: str, request_id: str, **kw: Any) -> S:
         ck = self.ck
         st = ck.state
         if action == "pause":
@@ -228,8 +267,10 @@ class ProjectEngine:
             if st not in REOPENABLE:
                 raise InvalidState(f"只有已完成的项目可以重新打开（当前 {st.value}）")
             self._transition(S.Writing, "用户重新打开项目修改论文", actor="user")
+        elif action == "rollback":
+            self._rollback(kw["checkpoint_id"])
         else:
-            raise ValidationFailed(f"未知操作 {action}（可用：pause、resume、cancel、reopen）")
+            raise ValidationFailed(f"未知操作 {action}（可用：pause、resume、cancel、reopen、rollback）")
         self._save()
         if request_id:
             self._done_requests[request_id] = self.ck.state

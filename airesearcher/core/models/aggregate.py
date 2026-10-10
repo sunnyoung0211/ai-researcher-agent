@@ -23,6 +23,7 @@ class AggregateRow(BaseModel):
     values: list[float]
     run_ids: list[str]
     outliers: list[float] = []
+    suspicious: list[str] = []  # 被人工标注为“可疑”的运行：保留在统计中，但要在表中标出（详细设计 3 第 8.4 节）
 
 
 class Contrast(BaseModel):

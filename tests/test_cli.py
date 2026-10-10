@@ -117,3 +117,65 @@ def test_models_commands(server, air_home, monkeypatch):
     (air_home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-fake\n", encoding="utf-8")
     out = run("models")
     assert "已设置" in out and "sk-ant-fake" not in out
+
+
+@pytest.fixture
+def sample_server(tmp_path, air_home, monkeypatch):
+    """样例项目登记到后台（不启动引擎），CLI 通过它访问。"""
+    from airesearcher.core.workspace import register_project
+    from airesearcher.testing.sample import copy_sample_project
+
+    p = copy_sample_project(tmp_path / "sample")
+    register_project(p.project_id, p.root, home=air_home)
+    with TestClient(create_app(home=air_home, start_engines=False)) as c:
+        monkeypatch.setattr(cli, "_client", c)
+        yield p
+
+
+def test_label_and_cancel_run(sample_server):
+    from airesearcher.services import runs as run_service
+
+    p = sample_server
+    rid = run_service.list_runs(p.root)[0].record.run_id
+    out = run("label", rid, "invalid", "-m", "数据有泄漏")
+    assert "无效" in out
+    assert "无效" in run("runs")
+    r = runner.invoke(cli.app, ["label", rid, "maybe"])
+    assert r.exit_code == 1 and "trusted" in r.output
+    out = run("cancel-run", rid)  # 已结束的运行：取消不生效，显示当前状态
+    assert "已请求取消" in out and "成功" in out
+
+
+def test_template_commands(sample_server, tmp_path):
+    import zipfile
+
+    z = tmp_path / "acl.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("main.tex", "\\documentclass{article}\n")
+    assert "默认模板" in run("template", "list") and "还没有上传过模板" in run("template", "list")
+    out = run("template", "upload", str(z))
+    assert "tpl-01 v1" in out and "main.tex" in out
+    out = run("template", "upload", str(z), "--to", "tpl-01")
+    assert "tpl-01 v2" in out
+    out = run("template", "list")
+    assert "当前使用：tpl-01 v2" in out and "未检查" in out
+
+
+def test_export_command(sample_server, tmp_path):
+    import zipfile
+
+    out = tmp_path / "paper.zip"
+    assert "已导出" in run("export", "-o", str(out))
+    assert any(n.endswith("ARCHIVE_INDEX.md") for n in zipfile.ZipFile(out).namelist())
+
+
+def test_checkpoints_and_rollback(sample_server):
+    out = run("checkpoints", "--all")
+    assert "ck-" in out and "air rollback" in out
+    from airesearcher.engine import checkpoint as ckpt
+
+    oldest = ckpt.briefs(sample_server.root)[-1].checkpoint_id
+    out = run("rollback", oldest)
+    assert f"已回滚到 {oldest}" in out and "air resume" in out
+    r = runner.invoke(cli.app, ["rollback", "ck-999999"])
+    assert r.exit_code == 1 and "找不到检查点" in r.output

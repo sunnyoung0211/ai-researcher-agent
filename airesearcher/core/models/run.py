@@ -88,6 +88,20 @@ class Resources(BaseModel):  # resources.json
     max_rss_mb: float | None = None
 
 
+RunLabelKind = Literal["trusted", "suspicious", "invalid"]
+
+
+class RunLabel(BaseModel):
+    """人工标注（详细设计 3 第 8.4 节）：artifacts/run_labels.jsonl 的一行，只追加，同一运行以最后一行为准。"""
+
+    run_id: str
+    label: RunLabelKind
+    reason: str = ""
+    by: str = "user"
+    ts: datetime
+    request_id: str = ""
+
+
 class RunSummary(BaseModel):
     """API /runs 列表的一行（GUI 运行页）。"""
 
@@ -101,6 +115,7 @@ class RunSummary(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    label: RunLabelKind | None = None  # 人工标注
 
 
 class RunView(BaseModel):
@@ -111,6 +126,7 @@ class RunView(BaseModel):
     metrics: list[MetricRecord] = []
     resources: Resources | None = None
     environment: dict[str, Any] | None = None
+    label: RunLabel | None = None
 
     def summary(self) -> RunSummary:
         return RunSummary(
@@ -118,5 +134,5 @@ class RunView(BaseModel):
             experiment_id=self.record.experiment_id, kind=self.record.kind, state=self.status.state,
             failure_reason=self.status.failure_reason, retry_of=self.record.retry_of,
             created_at=self.record.created_at, started_at=self.status.started_at,
-            ended_at=self.status.ended_at,
+            ended_at=self.status.ended_at, label=self.label.label if self.label else None,
         )

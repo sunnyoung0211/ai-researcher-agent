@@ -31,6 +31,8 @@ dev_app = typer.Typer(help="开发调试命令（不经过后台，直接操作�
 app.add_typer(dev_app, name="dev")
 models_app = typer.Typer(help="查看、测试已配置的大模型。不带子命令时列出当前配置。", invoke_without_command=True)
 app.add_typer(models_app, name="models")
+template_app = typer.Typer(help="论文模板：上传 zip、查看已上传的版本。", no_args_is_help=True)
+app.add_typer(template_app, name="template")
 skills_app = typer.Typer(help="查看、验证 skill（不经过后台）。", no_args_is_help=True)
 app.add_typer(skills_app, name="skills")
 console = Console()
@@ -43,7 +45,7 @@ _client: Any = None  # 测试时替换为 FastAPI TestClient
 def client() -> Any:
     global _client
     if _client is None:
-        _client = httpx.Client(base_url=SERVER, timeout=60)
+        _client = httpx.Client(base_url=SERVER, timeout=httpx.Timeout(60.0, read=600.0))  # 导出大档案时要等较久
     return _client
 
 
@@ -423,6 +425,33 @@ def reopen(pid: str = typer.Argument(None)):
 
 
 @app.command()
+def checkpoints(pid: str = typer.Argument(None),
+                all_: bool = typer.Option(False, "--all", help="也列出最近的普通检查点（默认只列状态切换时的里程碑）")):
+    """列出可以回滚到的检查点。"""
+    pid = resolve_pid(pid)
+    rows = api("GET", f"/api/projects/{pid}/checkpoints")
+    rows = rows if all_ else [r for r in rows if r["milestone"]]
+    t = Table("检查点", "保存时间", "当时的状态", "里程碑")
+    for r in rows:
+        t.add_row(r["checkpoint_id"], r["saved_at"][:19].replace("T", " "), L.label(L.STATE, r["state"]),
+                  "✓" if r["milestone"] else "")
+    console.print(t)
+    console.print("回滚：air rollback <检查点>（项目正在工作时先 air pause）")
+
+
+@app.command()
+def rollback(checkpoint_id: str = typer.Argument(..., help="检查点编号，如 ck-000012（air checkpoints 查看）"),
+             pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """回到历史检查点（项目正在工作时须先 air pause）。不删除任何产物或运行，之后用 air resume 从那里重新开始。"""
+    pid = resolve_pid(pid)
+    st = api("POST", f"/api/projects/{pid}/rollback", json={"checkpoint_id": checkpoint_id, "request_id": rid()})
+    note = st["blocking_reason"] or L.label(L.STATE, st["state"])
+    console.print(f"[green]✓ 已回滚到 {checkpoint_id}[/]：{escape(note)}")
+    if st["state"] == "Paused":
+        console.print("确认无误后运行：air resume")
+
+
+@app.command()
 def runs(pid: str = typer.Argument(None)):
     """列出实验运行。"""
     pid = resolve_pid(pid)
@@ -430,11 +459,34 @@ def runs(pid: str = typer.Argument(None)):
     if not rows:
         console.print("还没有运行。")
         return
-    t = Table("运行编号", "任务", "类型", "状态", "失败原因", "重试自")
+    t = Table("运行编号", "任务", "类型", "状态", "失败原因", "重试自", "人工标注")
     for r in rows:
         t.add_row(r["run_id"], r["task_key"], L.label(L.RUN_KIND, r["kind"]), L.label(L.RUN, r["state"]),
-                  L.label(L.FAILURE, r["failure_reason"]), r["retry_of"] or "")
+                  L.label(L.FAILURE, r["failure_reason"]), r["retry_of"] or "", L.label(L.RUN_LABEL, r.get("label")))
     console.print(t)
+
+
+@app.command("cancel-run")
+def cancel_run(run_id: str = typer.Argument(..., help="运行编号"),
+               pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """取消一个正在跑的实验运行（项目本身不暂停）。"""
+    pid = resolve_pid(pid)
+    st = api("POST", f"/api/projects/{pid}/runs/{run_id}/cancel", json={"request_id": rid()})
+    console.print(f"已请求取消 {run_id}，当前状态：{L.label(L.RUN, st['state'])}（结束后在 air runs 中显示为“已取消”）")
+
+
+@app.command("label")
+def label_run(run_id: str = typer.Argument(..., help="运行编号"),
+              label: str = typer.Argument(..., help="trusted（可信）/ suspicious（可疑）/ invalid（无效）"),
+              message: str = typer.Option("", "-m", "--message", help="原因"),
+              pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """人工标注运行：invalid 的运行不计入汇总，suspicious 的计入但在表中标出。"""
+    if label not in L.RUN_LABEL:
+        fail(f"标注只能是 {' / '.join(L.RUN_LABEL)}")
+    pid = resolve_pid(pid)
+    api("POST", f"/api/projects/{pid}/runs/{run_id}/label",
+        json={"label": label, "reason": message, "request_id": rid()})
+    console.print(f"[green]✓ 已把 {run_id} 标注为「{L.RUN_LABEL[label]}」[/]。汇总结果会在下一次汇总时更新。")
 
 
 @app.command()
@@ -454,6 +506,61 @@ def logs(args: list[str] = typer.Argument(..., help="[项目编号] 运行编号
         if not follow or c["eof"]:
             break
         time.sleep(1)
+
+
+@app.command()
+def export(pid: str = typer.Argument(None),
+           what: str = typer.Option("paper", "--what", help="paper（论文交付包）或 archive（整个研究档案）"),
+           output: Path = typer.Option(None, "-o", "--output", help="保存到哪里（默认当前目录下 <项目>-<what>.zip）")):
+    """导出 zip：论文交付包（LaTeX、PDF、图表、论断、核验报告、ARCHIVE_INDEX.md）或整个研究档案。"""
+    if what not in ("paper", "archive"):
+        fail("--what 只能是 paper 或 archive")
+    pid = resolve_pid(pid)
+    try:
+        r = client().get(f"/api/projects/{pid}/export", params={"what": what})
+    except httpx.ConnectError:
+        fail(f"连不上后台（{SERVER}）。请先在另一个终端运行：air serve")
+    if r.status_code >= 400:
+        fail(r.json().get("error", {}).get("message", r.text))
+    output = output or Path(f"{pid}-{what}.zip")
+    output.write_bytes(r.content)
+    console.print(f"[green]✓ 已导出到 {output}[/]（{len(r.content) / 1024:.0f} KB）")
+
+
+# ====================================================================== air template
+@template_app.command("upload")
+def template_upload(zip_path: Path = typer.Argument(..., help="模板 zip 文件"),
+                    to: str = typer.Option(None, "--to", help="作为已有模板的新版本，如 tpl-01"),
+                    pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """上传论文模板（zip），项目改用这个模板。"""
+    if not zip_path.is_file():
+        fail(f"找不到文件 {zip_path}")
+    pid = resolve_pid(pid)
+    data = {"request_id": rid(), **({"template_id": to} if to else {})}
+    info = api("POST", f"/api/projects/{pid}/templates", data=data,
+               files={"file": (zip_path.name, zip_path.read_bytes(), "application/zip")})
+    console.print(f"[green]✓ 已上传为 {info['template_id']} v{info['version']}[/]（{len(info['files'])} 个文件，"
+                  f"入口候选：{', '.join(info['tex_files']) or '无'}）。论文阶段会检查模板，有问题时会提问。")
+
+
+@template_app.command("list")
+def template_list(pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """列出已上传的模板版本和检查结果。"""
+    pid = resolve_pid(pid)
+    lst = api("GET", f"/api/projects/{pid}/templates")
+    cur = lst["current"]
+    console.print("当前使用：" + (f"{cur['id']} v{cur['version']}" if cur else "默认模板"))
+    if not lst["templates"]:
+        console.print("还没有上传过模板。上传：air template upload <zip 文件>")
+        return
+    t = Table("模板", "版本", "文件名", "入口", "缺失依赖", "最小编译", "使用中")
+    for x in lst["templates"]:
+        chk = x["check"] or {}
+        missing = ", ".join(m.get("name", "?") for m in chk.get("missing", [])) if chk else ""
+        ok = {True: "成功", False: "失败"}.get(chk.get("minimal_compile_ok"), "未检查") if chk else "未检查"
+        t.add_row(x["template_id"], str(x["version"]), escape(x["filename"] or ""), chk.get("entry") or "",
+                  escape(missing), ok, "✓" if x["in_use"] else "")
+    console.print(t)
 
 
 # ====================================================================== air models
