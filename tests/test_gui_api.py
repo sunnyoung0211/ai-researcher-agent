@@ -242,3 +242,31 @@ def test_template_upload_not_zip_and_unknown_id(sample_client):
     assert c.post(base, files={"file": ("t.zip", b"not a zip")}).json()["error"]["message"] == "上传的文件不是 zip"
     r = c.post(base, files={"file": ("t.zip", make_zip({"main.tex": "x"}))}, data={"template_id": "tpl-09"})
     assert r.status_code == 404
+
+
+def test_export_paper_and_archive(sample_client):
+    import io
+    import zipfile
+
+    c, p = sample_client
+    pid = p.project_id
+    r = c.get(f"/api/projects/{pid}/export", params={"what": "paper"})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert f'{pid}-paper.zip' in r.headers["content-disposition"]
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    pre = f"{pid}-paper/"
+    assert all(n.startswith(pre) for n in names)
+    rel = {n[len(pre):] for n in names}
+    assert {"ARCHIVE_INDEX.md", "paper/main.tex", "paper/claims.jsonl", "paper/build/main.pdf",
+            "paper/review/review_v2.json", "artifacts/figures/fig_c1/figure.json"} <= rel
+    assert "paper/build/main.aux" not in rel and not any(x.startswith("runs/") for x in rel)
+    index = zipfile.ZipFile(io.BytesIO(r.content)).read(pre + "ARCHIVE_INDEX.md").decode("utf-8")
+    assert "fig_c1" in index and "contradicted" in index and "E2-seed=2" in index
+
+    r = c.get(f"/api/projects/{pid}/export", params={"what": "archive"})
+    rel = {n.split("/", 1)[1] for n in zipfile.ZipFile(io.BytesIO(r.content)).namelist()}
+    assert {"project.yaml", "research_log.jsonl", ".state/checkpoint.json", "ARCHIVE_INDEX.md"} <= rel
+    assert any(x.startswith("runs/") for x in rel) and any(x.startswith(".archive/") for x in rel)
+    assert not any(x.startswith(".git/") for x in rel)
+    assert c.get(f"/api/projects/{pid}/export", params={"what": "nope"}).status_code == 422
+    assert [e.type for e in p.events.all()].count("project.exported") == 2

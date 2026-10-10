@@ -18,6 +18,7 @@ from airesearcher.core.fsutil import now, read_json, read_jsonl
 from airesearcher.core.models.aggregate import Aggregate
 from airesearcher.core.models.claim import CheckReport, Claim, ClaimCheck, EvidenceTrace, Issue, ValueRef
 from airesearcher.core.models.common import VersionRef
+from airesearcher.core.models.figure import Figure
 
 from . import literature, runs
 
@@ -180,3 +181,112 @@ def trace(root: Path, claim_id: str) -> EvidenceTrace:
 def audit(root: Path, llm: object) -> CheckReport:
     """评价用：从最终 PDF 正文中抽取论断并核验。TODO（论文同学，详细设计 4 第 13.3 节）。"""
     raise NotImplementedError("evidence.audit() 由论文同学实现")
+
+
+# ---------------------------------------------------------------- ARCHIVE_INDEX.md（详细设计 4 第 10.2 节）
+_CLAIM_WRAP = re.compile(r"^\\claim\{[^}]*\}\{(.*)\}$", re.S)
+_AIRVAL = re.compile(r"\\airval\{([^}]*)\}")
+
+
+def _cell(text: str, limit: int = 90) -> str:
+    text = " ".join(str(text).split()).replace("|", "\\|")
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _latest_review(root: Path) -> CheckReport | None:
+    reviews = sorted((Path(root) / "paper" / "review").glob("review_v*.json"),
+                     key=lambda p: int(re.sub(r"\D", "", p.stem) or 0))
+    if not reviews:
+        return None
+    try:
+        return CheckReport.model_validate(read_json(reviews[-1]))
+    except ValueError:
+        return None
+
+
+def archive_index(root: Path, project_id: str = "", title: str = "") -> str:
+    """导出时附带的对照表：图表 → 汇总 → 运行编号、论断 → 证据、运行清单。只读文件。"""
+    root = Path(root)
+    arch = Archive(root, Events(root))
+    lines = [f"# 研究档案索引：{title or project_id}", "",
+             f"项目 `{project_id}`，生成于 {now().isoformat(timespec='seconds')}。", ""]
+    refs = []
+    for aid, name in (("idea/selected.md", "研究问题"), ("plan/experiment_plan.md", "实验计划"), ("paper", "论文")):
+        ref = arch.latest(aid)
+        if ref is not None:
+            refs.append(f"- {name}：`{aid}` v{ref.version}（sha256 `{ref.sha256[:12]}`）")
+    lines += refs + ([""] if refs else [])
+
+    labels = runs.load_labels(root)
+    lines += ["## 1. 图表 → 汇总结果 → 运行", "",
+              "| 图 | 标题 | 汇总结果 | 每组样本数 | 运行 |", "|---|---|---|---|---|"]
+    fig_dir = root / "artifacts" / "figures"
+    figs = sorted(fig_dir.glob("*/figure.json")) if fig_dir.exists() else []
+    for p in figs:
+        try:
+            fig = Figure.model_validate(read_json(p))
+        except ValueError:
+            continue
+        n = ", ".join(f"{k}={v}" for k, v in fig.n_per_group.items())
+        lines.append(f"| `{fig.fig_id}` | {_cell(fig.spec.title, 50)} | `{fig.spec.aggregate_id}` "
+                     f"v{fig.aggregate_ref.version} | {n} | {', '.join(f'`{r}`' for r in fig.run_ids)} |")
+    if not figs:
+        lines.append("| （还没有图表） | | | | |")
+
+    lines += ["", "## 2. 汇总结果 → 运行", "",
+              "| 汇总 | 组 | 指标 | n | 均值 | 95% 区间 | 运行 |", "|---|---|---|---|---|---|---|"]
+    agg_dir = root / "artifacts" / "aggregates"
+    aggs = sorted(agg_dir.glob("*.json")) if agg_dir.exists() else []
+    excluded: list[str] = []
+    for p in aggs:
+        try:
+            agg = Aggregate.model_validate(read_json(p))
+        except ValueError:
+            continue
+        for r in agg.rows:
+            ci = f"[{r.ci95[0]:.4f}, {r.ci95[1]:.4f}]" if r.ci95 else "—"
+            group = ", ".join(f"{k}={v}" for k, v in r.group.items())
+            run_cells = ", ".join(f"`{x}`" + ("（可疑）" if x in r.suspicious else "") for x in r.run_ids)
+            lines.append(f"| `{agg.aggregate_id}` | {group} | {r.metric} | {r.n} | {r.mean:.4f} | {ci} | {run_cells} |")
+        excluded += [f"- `{agg.aggregate_id}` 排除 `{e['run_id']}`：{e['reason']}" for e in agg.excluded]
+    if not aggs:
+        lines.append("| （还没有汇总结果） | | | | | | |")
+    if excluded:
+        lines += ["", "排除的运行：", "", *excluded]
+
+    lines += ["", "## 3. 论断 → 证据", "", "| 论断 | 章节 | 内容 | 证据 | 核验结论 |", "|---|---|---|---|---|"]
+    review = _latest_review(root)
+    verdict = {c.claim_id: c.support for c in review.claims} if review else {}
+    try:
+        claims = load_claims(root)
+    except (ValueError, FileNotFoundError):
+        claims = []
+    for c in claims:
+        m = _CLAIM_WRAP.match(c.text.strip())
+        text = _AIRVAL.sub(lambda x: f"[{x.group(1)}]", m.group(1) if m else c.text).replace("\\%", "%")
+        ev = ", ".join(f"{e.type}:`{e.ref}`" + (f" v{e.version}" if e.version else "") for e in c.evidence)
+        lines.append(f"| `{c.claim_id}` | {c.section} | {_cell(text)} | {ev} | {verdict.get(c.claim_id, '未核验')} |")
+    if not claims:
+        lines.append("| （还没有论断） | | | | |")
+    if review:
+        lines += ["", f"核验报告：`paper/review/` 最新一版，问题数 {review.counts}。"]
+
+    lines += ["", "## 4. 运行清单", "",
+              "| 运行 | 任务 | 类型 | 状态 | 人工标注 | 代码提交 | 配置 sha256 | 重试自 |",
+              "|---|---|---|---|---|---|---|---|"]
+    for rv in runs.list_runs(root):
+        rec, st = rv.record, rv.status
+        lab = labels.get(rec.run_id)
+        state = st.state.value + (f"（{st.failure_reason}）" if st.failure_reason else "")
+        lines.append(f"| `{rec.run_id}` | {rec.task_key} | {rec.kind} | {state} | "
+                     f"{(lab.label + '：' + _cell(lab.reason, 40)) if lab else ''} | `{rec.code_commit[:10]}` | "
+                     f"`{rec.config_sha256[:12]}` | {rec.retry_of or ''} |")
+
+    cited = sorted({pid for c in claims for e in c.evidence if e.type == "paper" for pid in [e.ref]})
+    papers = literature.load_papers(root)
+    if papers:
+        lines += ["", "## 5. 文献", "", "| 文献 | 引用键 | 标题 | 链接 | 论文中引用 |", "|---|---|---|---|---|"]
+        for pid, rec in sorted(papers.items()):
+            lines.append(f"| `{pid}` | `{rec.citation_key}` | {_cell(rec.title, 60)} | {rec.url} | "
+                         f"{'✓' if pid in cited else ''} |")
+    return "\n".join(lines) + "\n"

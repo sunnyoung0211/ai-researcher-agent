@@ -45,7 +45,7 @@ _client: Any = None  # 测试时替换为 FastAPI TestClient
 def client() -> Any:
     global _client
     if _client is None:
-        _client = httpx.Client(base_url=SERVER, timeout=60)
+        _client = httpx.Client(base_url=SERVER, timeout=httpx.Timeout(60.0, read=600.0))  # 导出大档案时要等较久
     return _client
 
 
@@ -479,6 +479,25 @@ def logs(args: list[str] = typer.Argument(..., help="[项目编号] 运行编号
         if not follow or c["eof"]:
             break
         time.sleep(1)
+
+
+@app.command()
+def export(pid: str = typer.Argument(None),
+           what: str = typer.Option("paper", "--what", help="paper（论文交付包）或 archive（整个研究档案）"),
+           output: Path = typer.Option(None, "-o", "--output", help="保存到哪里（默认当前目录下 <项目>-<what>.zip）")):
+    """导出 zip：论文交付包（LaTeX、PDF、图表、论断、核验报告、ARCHIVE_INDEX.md）或整个研究档案。"""
+    if what not in ("paper", "archive"):
+        fail("--what 只能是 paper 或 archive")
+    pid = resolve_pid(pid)
+    try:
+        r = client().get(f"/api/projects/{pid}/export", params={"what": what})
+    except httpx.ConnectError:
+        fail(f"连不上后台（{SERVER}）。请先在另一个终端运行：air serve")
+    if r.status_code >= 400:
+        fail(r.json().get("error", {}).get("message", r.text))
+    output = output or Path(f"{pid}-{what}.zip")
+    output.write_bytes(r.content)
+    console.print(f"[green]✓ 已导出到 {output}[/]（{len(r.content) / 1024:.0f} KB）")
 
 
 # ====================================================================== air template

@@ -159,3 +159,11 @@ def test_template_commands(sample_server, tmp_path):
     assert "tpl-01 v2" in out
     out = run("template", "list")
     assert "当前使用：tpl-01 v2" in out and "未检查" in out
+
+
+def test_export_command(sample_server, tmp_path):
+    import zipfile
+
+    out = tmp_path / "paper.zip"
+    assert "已导出" in run("export", "-o", str(out))
+    assert any(n.endswith("ARCHIVE_INDEX.md") for n in zipfile.ZipFile(out).namelist())
