@@ -104,6 +104,12 @@ class EditRequest(BaseModel):
     request_id: str = ""
 
 
+class LabelRequest(BaseModel):
+    label: Literal["trusted", "suspicious", "invalid"]
+    reason: str = ""
+    request_id: str = ""
+
+
 class RequestIdOnly(BaseModel):
     request_id: str = ""
 

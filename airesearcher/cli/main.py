@@ -430,11 +430,34 @@ def runs(pid: str = typer.Argument(None)):
     if not rows:
         console.print("还没有运行。")
         return
-    t = Table("运行编号", "任务", "类型", "状态", "失败原因", "重试自")
+    t = Table("运行编号", "任务", "类型", "状态", "失败原因", "重试自", "人工标注")
     for r in rows:
         t.add_row(r["run_id"], r["task_key"], L.label(L.RUN_KIND, r["kind"]), L.label(L.RUN, r["state"]),
-                  L.label(L.FAILURE, r["failure_reason"]), r["retry_of"] or "")
+                  L.label(L.FAILURE, r["failure_reason"]), r["retry_of"] or "", L.label(L.RUN_LABEL, r.get("label")))
     console.print(t)
+
+
+@app.command("cancel-run")
+def cancel_run(run_id: str = typer.Argument(..., help="运行编号"),
+               pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """取消一个正在跑的实验运行（项目本身不暂停）。"""
+    pid = resolve_pid(pid)
+    st = api("POST", f"/api/projects/{pid}/runs/{run_id}/cancel", json={"request_id": rid()})
+    console.print(f"已请求取消 {run_id}，当前状态：{L.label(L.RUN, st['state'])}（结束后在 air runs 中显示为“已取消”）")
+
+
+@app.command("label")
+def label_run(run_id: str = typer.Argument(..., help="运行编号"),
+              label: str = typer.Argument(..., help="trusted（可信）/ suspicious（可疑）/ invalid（无效）"),
+              message: str = typer.Option("", "-m", "--message", help="原因"),
+              pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """人工标注运行：invalid 的运行不计入汇总，suspicious 的计入但在表中标出。"""
+    if label not in L.RUN_LABEL:
+        fail(f"标注只能是 {' / '.join(L.RUN_LABEL)}")
+    pid = resolve_pid(pid)
+    api("POST", f"/api/projects/{pid}/runs/{run_id}/label",
+        json={"label": label, "reason": message, "request_id": rid()})
+    console.print(f"[green]✓ 已把 {run_id} 标注为「{L.RUN_LABEL[label]}」[/]。汇总结果会在下一次汇总时更新。")
 
 
 @app.command()

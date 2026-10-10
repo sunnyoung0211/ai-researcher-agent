@@ -9,13 +9,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from airesearcher.core.errors import ValidationFailed
-from airesearcher.core.models.run import RunStatus, RunSummary, RunView
+from airesearcher.core.models.run import RunLabel, RunStatus, RunSummary, RunView
 from airesearcher.runtime.executor import LogChunk
 from airesearcher.services import runs as run_service
 
 from ..deps import manager
 from ..manager import ProjectManager
-from ..schemas import RequestIdOnly
+from ..schemas import LabelRequest, RequestIdOnly
 from ..sse import POLL_SECONDS, SSE_HEADERS, RunLogStream
 
 router = APIRouter(prefix="/api/projects/{pid}/runs", tags=["runs"])
@@ -70,3 +70,9 @@ def cancel_run(pid: str, run_id: str, body: RequestIdOnly, m: ProjectManager = D
     ex.cancel(run_id)
     m.get(pid).events.append("run.cancel_requested", f"用户请求取消运行 {run_id}", actor="user", run_id=run_id)
     return ex.status(run_id)
+
+
+@router.post("/{run_id}/label", response_model=RunLabel)
+def label_run(pid: str, run_id: str, body: LabelRequest, m: ProjectManager = Depends(manager)) -> RunLabel:
+    """人工标注运行：trusted / suspicious / invalid。invalid 的运行在汇总中排除，suspicious 的保留但标出（FR-37）。"""
+    return m.label_run(pid, run_id, body.label, body.reason, body.request_id)

@@ -136,3 +136,43 @@ def test_log_stream_endpoint(client):
     whole = c.get(f"/api/projects/{pid}/runs/{rid}/logs").json()["text"]
     assert [d["text"] for e, d in events if e == "line"] == whole.rstrip("\n").split("\n")
     assert c.get(f"/api/projects/{pid}/runs/r-nope/logs/stream").status_code == 404
+
+
+@pytest.fixture
+def sample_client(tmp_path, air_home):
+    """样例项目登记到后台（不启动引擎线程），用来测只读和标注类接口。"""
+    from airesearcher.core.workspace import register_project
+    from airesearcher.testing.sample import copy_sample_project
+
+    p = copy_sample_project(tmp_path / "sample")
+    register_project(p.project_id, p.root, home=air_home)
+    with TestClient(create_app(home=air_home, start_engines=False)) as c:
+        yield c, p
+
+
+def test_run_labels(sample_client):
+    from airesearcher.services import runs as run_service
+
+    c, p = sample_client
+    base = f"/api/projects/{p.project_id}/runs"
+    c1 = run_service.load_aggregate(p.root, "C1")
+    bad, odd = c1.rows[0].run_ids[0], c1.rows[0].run_ids[1]
+    r = c.post(f"{base}/{bad}/label", json={"label": "invalid", "reason": "数据泄漏", "request_id": "l1"})
+    assert r.status_code == 200 and r.json()["label"] == "invalid"
+    again = c.post(f"{base}/{bad}/label", json={"label": "invalid", "reason": "数据泄漏", "request_id": "l1"})
+    assert again.json()["ts"] == r.json()["ts"]  # 同一 request_id 不重复写
+    c.post(f"{base}/{odd}/label", json={"label": "suspicious", "reason": "曲线异常", "request_id": "l2"})
+    labels = {x["run_id"]: x["label"] for x in c.get(base).json()}
+    assert labels[bad] == "invalid" and labels[odd] == "suspicious"
+    assert c.get(f"{base}/{bad}").json()["label"]["reason"] == "数据泄漏"
+
+    agg = run_service.recompute_aggregate(p.root, "C1")
+    row = next(x for x in agg.rows if x.group == c1.rows[0].group)
+    assert bad not in row.run_ids and row.n == c1.rows[0].n - 1 and row.suspicious == [odd]
+    assert any(e["run_id"] == bad and "人工标注为无效" in e["reason"] for e in agg.excluded)
+    assert "可疑" in run_service.aggregate_markdown(agg)
+    assert len((p.root / "artifacts/run_labels.jsonl").read_text(encoding="utf-8").splitlines()) == 2
+    assert [e.type for e in p.events.all()].count("run.labeled") == 2
+
+    assert c.post(f"{base}/r-nope/label", json={"label": "invalid"}).status_code == 404
+    assert c.post(f"{base}/{bad}/label", json={"label": "maybe"}).status_code == 422
