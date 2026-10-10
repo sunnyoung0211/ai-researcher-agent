@@ -9,7 +9,8 @@ import yaml
 
 from airesearcher.core.errors import PermissionDenied
 from airesearcher.llm.gateway import LLMRequest, litellm_kwargs
-from airesearcher.llm.models import MissingAPIKey, ModelRegistry, UnknownModel, read_dotenv
+from airesearcher.llm.models import MissingAPIKey, ModelEntry, ModelRegistry, UnknownModel, read_dotenv
+from airesearcher.llm.pricing import estimate_usd
 from airesearcher.testing.fake_llm import fake_gateway
 
 USER = {
@@ -122,3 +123,18 @@ def test_relay_model_without_provider_prefix(user_config, project):
     req = LLMRequest(role="r", prompt_id="p/x", prompt_version=1, model="gpt-6.1-sol", messages=[], max_tokens=10)
     with pytest.raises(ValueError, match="provider/model"):
         litellm_kwargs(req)
+
+
+def test_openrouter_and_native_provider_with_foreign_api_base():
+    """OpenRouter 的模型名自带 anthropic/ 前缀：配了 OpenRouter 地址时改走 openrouter/ 通道；
+    别的中转站配 anthropic/ 时给出提示。"""
+    orr = ModelEntry(model="anthropic/claude-haiku-5.5", api_base="https://openrouter.ai/api/v1", key_env="OR_KEY")
+    assert orr.litellm_model == "openrouter/anthropic/claude-haiku-5.5"
+    assert orr.problem is None and orr.host == "openrouter.ai"
+    assert ModelEntry(model="openai/anthropic/claude-haiku-5.5",
+                      api_base="https://openrouter.ai/api/v1").litellm_model == "openai/anthropic/claude-haiku-5.5"
+    relay = ModelEntry(model="anthropic/claude-haiku-5-5", api_base="https://www.relay.example/v1")
+    assert relay.litellm_model == "anthropic/claude-haiku-5-5"
+    assert "openai/anthropic/claude-haiku-5-5" in relay.problem
+    assert ModelEntry(model="anthropic/claude-haiku-5-5", api_base="https://api.anthropic.com").problem is None
+    assert estimate_usd("openrouter/anthropic/claude-haiku-5.5", 1_000_000, 0) == 0.10

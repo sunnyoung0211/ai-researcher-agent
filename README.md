@@ -343,6 +343,13 @@ stages:
 
   `model` 必须是“供应商/模型名”的形式（中转站写 `openai/`；只写模型名但填了 `api_base` 时会自动补上 `openai/`）；
   `price` 是中转站的价格（美元 / 百万 token），用于预算记账，不写时按偏高的默认价估算。
+  中转站用 Claude 也写 `openai/`（如 `openai/claude-haiku-5-5`）；写成 `anthropic/…` 会按 Anthropic 官方格式发请求，中转站通常返回 404。
+- **OpenRouter**：模型名照 OpenRouter 网站上的写（如 `anthropic/claude-haiku-5.5`），地址填 OpenRouter，会自动走 OpenRouter 通道：
+
+  ```yaml
+  models:
+    claude-fast: {model: anthropic/claude-haiku-5.5, api_base: "https://openrouter.ai/api/v1", key_env: OPENROUTER_API_KEY}
+  ```
 - 你登记的模型的接口域名会被自动允许访问，不需要改项目的网络白名单。
 
 **开发者：真实模型测试**（会产生几美分费用，CI 中不运行）：

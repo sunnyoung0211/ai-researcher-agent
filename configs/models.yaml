@@ -11,6 +11,9 @@
 # - 第三方中转站（OpenAI 兼容接口）：写 model: openai/<模型名> 并设置 api_base（只写模型名也会自动按 openai/ 处理），
 #   例：relay-gpt: {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY, price: [输入, 输出]}
 #   price 是中转站的价格（美元 / 百万 token），用于预算记账；不写时按偏高的默认价估算；
+#   中转站上的 Claude 也写 openai/<模型名>：写 anthropic/ 会按 Anthropic 官方格式发请求，中转站通常返回 404；
+# - OpenRouter：模型名照它网站上的写（如 anthropic/claude-haiku-5.5），api_base 写 https://openrouter.ai/api/v1，
+#   会自动走 LiteLLM 的 openrouter/ 通道；
 # - 这里登记的模型的接口域名，网关调用时视为已授权，不需要再加到每个项目的网络白名单；
 # - 阶段代码只请求档位（fast / strong）或角色名，不写具体模型名。
 

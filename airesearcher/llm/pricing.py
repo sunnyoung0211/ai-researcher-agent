@@ -17,6 +17,9 @@ DEFAULT = (4.0, 20.0)  # 未收录的模型按较高的价格估算，宁可高�
 
 
 def estimate_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+    model = model.removeprefix("openrouter/")  # OpenRouter 转发的模型按原厂价格估算
     key = model if "/" in model else f"anthropic/{model}"
+    if key.startswith("anthropic/"):
+        key = key.replace(".", "-")  # OpenRouter 写 claude-haiku-5.5，官方写 claude-haiku-5-5
     pin, pout = PRICES.get(key, DEFAULT)
     return round((input_tokens * pin + output_tokens * pout) / 1_000_000, 6)
