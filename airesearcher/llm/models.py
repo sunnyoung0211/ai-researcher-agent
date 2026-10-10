@@ -46,6 +46,8 @@ PROVIDER_HOSTS = {
     "ollama": "localhost",
     "ollama_chat": "localhost",
 }
+# 有自己专用请求格式的供应商：配上别家的 api_base 基本都是写错了
+NATIVE_PROVIDERS = {"anthropic", "gemini"}
 
 
 class UnknownModel(Exception):
@@ -71,7 +73,15 @@ class ModelEntry(BaseModel):
 
     @property
     def litellm_model(self) -> str:
-        """发给 LiteLLM 的模型名：没写供应商但有 api_base 时，按 OpenAI 兼容接口处理（第三方中转站的常见情况）。"""
+        """发给 LiteLLM 的模型名。
+
+        - api_base 是 OpenRouter 时，统一走 LiteLLM 的 openrouter/ 通道（OpenRouter 的模型名本身带 anthropic/ 等前缀，
+          直接交给 LiteLLM 会被当成 Anthropic 官方接口、按原生格式发到 OpenRouter，结果 404）；
+        - 没写供应商但有 api_base 时，按 OpenAI 兼容接口处理（第三方中转站的常见情况）。
+        """
+        base_host = urlparse(self.api_base).hostname if self.api_base else None
+        if base_host == PROVIDER_HOSTS["openrouter"] and self.model.split("/", 1)[0] not in ("openrouter", "openai"):
+            return f"openrouter/{self.model}"
         if "/" not in self.model and self.api_base:
             return f"openai/{self.model}"
         return self.model
@@ -82,6 +92,11 @@ class ModelEntry(BaseModel):
         if "/" not in self.litellm_model:
             return (f"模型 {self.model!r} 没有写供应商：应写成 provider/model，如 openai/{self.model}；"
                     f"第三方中转站请写 openai/<模型名> 并设置 api_base")
+        official = PROVIDER_HOSTS.get(self.provider)
+        if self.api_base and self.provider in NATIVE_PROVIDERS and self.host != official:
+            return (f"api_base 指向 {self.host}，但模型写的是 {self.provider}/…，"
+                    f"LiteLLM 会按 {self.provider} 官方接口的格式发请求，第三方中转站通常不认（常见报错 404）。"
+                    f"中转站请写 openai/{self.model}")
         return None
 
     @property
@@ -280,6 +295,10 @@ models:
   # price 写它的价格（美元/百万 token，输入、输出）：
   # relay-gpt:   {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY,
   #               price: [1.0, 4.0]}
+  # 中转站上的 Claude 也写 openai/<模型名>（写 anthropic/ 会按官方格式发请求，中转站通常 404）。
+  # OpenRouter：模型名照它网站上的写，会自动走 OpenRouter 通道：
+  # or-haiku:    {model: anthropic/claude-haiku-5.5, api_base: "https://openrouter.ai/api/v1",
+  #               key_env: OPENROUTER_API_KEY}
   # local-qwen:  {model: ollama/qwen2.5, api_base: "http://localhost:11434"}   # 本地模型，不需要 Key
 
 tiers:                 # 全局默认：fast = 大批量便宜调用，strong = 写作、编码、核验
