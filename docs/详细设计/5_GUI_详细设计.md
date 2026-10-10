@@ -355,6 +355,14 @@ export function subscribeProject(pid, handlers) {
 
 日志流：P7 对运行中的运行订阅 `/runs/{run_id}/logs/stream`，每收到一行就追加；运行结束后关闭订阅。
 
+**后台已实现（2026-10，主干 v0.6）：** 项目流六种消息都会推；日志流每行一条 `line` 消息 `{text}`，运行结束、日志读完后推一条 `end` 消息 `{run_id, status}` 并断开——**收到 `end` 后必须调用 `es.close()`**，否则浏览器会自动重连（重连后会立刻再收到 `end`，不会重复推日志）：
+
+```js
+const es = new EventSource(`/api/projects/${pid}/runs/${rid}/logs/stream?stream=stdout`)
+es.addEventListener('line', (m) => appendLine(JSON.parse(m.data).text))
+es.addEventListener('end', () => es.close())
+```
+
 ### 5.4 不在浏览器里保存业务状态
 
 - 项目状态、审批、运行等全部从后台读取，**不存在 localStorage 中**；

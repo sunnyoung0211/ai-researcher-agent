@@ -139,9 +139,12 @@ class RunLogStream:
 
 
 @router.get("/stream")
-async def stream(pid: str, request: Request, m: ProjectManager = Depends(manager)) -> StreamingResponse:
+async def stream(pid: str, request: Request, from_now: bool = False,
+                 m: ProjectManager = Depends(manager)) -> StreamingResponse:
+    """from_now=true：不补推连接之前的历史事件（页面刚打开时用；断线重连时浏览器带的 Last-Event-ID 优先）。"""
+    header = request.headers.get("last-event-id")
     try:
-        last_seq = int(request.headers.get("last-event-id", "0"))
+        last_seq = int(header) if header else (m.get(pid).events.last_seq if from_now else 0)
     except ValueError:
         last_seq = 0
     ps = ProjectStream(m, pid, last_seq)
