@@ -9,7 +9,7 @@
 air dev new-workspace /tmp/ws --from fixtures/sample_project
 ```
 
-在测试里用夹具 `sample_project`（`tests/conftest.py`），或 `airesearcher.testing.sample.copy_sample_project()`。
+在测试里：测试函数的参数写 `sample_project`，pytest 会自动复制一份样例项目传进来（这叫 pytest 的“夹具” fixture，定义在 `tests/conftest.py`）；不用 pytest 时调用 `airesearcher.testing.sample.copy_sample_project()`。
 
 ## 里面有什么
 
