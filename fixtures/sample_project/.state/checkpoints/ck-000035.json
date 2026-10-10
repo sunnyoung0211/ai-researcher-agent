@@ -1,6 +1,6 @@
 {
   "checkpoint_id": "ck-000035",
-  "saved_at": "2026-10-08T20:38:06.611463+08:00",
+  "saved_at": "2026-10-10T11:38:17.851270+08:00",
   "state": "ManuscriptPending",
   "resume_to": null,
   "pending_approval": "ap-0006",
@@ -19,7 +19,7 @@
     "log": {
       "artifact_id": "logs/round_1.md",
       "version": 1,
-      "sha256": "8bcf21348ab8660f0a0c3f5f0c3c870c30f4b68095000f40dd68280e28d68984"
+      "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
     }
   },
   "stale": [],
@@ -45,13 +45,13 @@
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "727ce0556e6ad452594a5c7b7ac7ce17e21dbe8f",
+      "commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203756-772f"
+            "r-20261010-113808-e173"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -66,7 +66,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203757-d76a"
+            "r-20261010-113808-6128"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -81,7 +81,7 @@
         "E1-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-cbbf"
+            "r-20261010-113809-6926"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -96,7 +96,7 @@
         "E2-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-53a0"
+            "r-20261010-113809-0426"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -111,7 +111,7 @@
         "E2-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203800-0496"
+            "r-20261010-113811-02ea"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -126,8 +126,8 @@
         "E2-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203800-9ea4",
-            "r-20261008-203801-14bc"
+            "r-20261010-113811-67d8",
+            "r-20261010-113812-86a1"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -138,12 +138,12 @@
             "fail_mode": "none"
           },
           "eval_condition": "final",
-          "retry_of": "r-20261008-203800-9ea4"
+          "retry_of": "r-20261010-113811-67d8"
         },
         "E3-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203801-0e8d"
+            "r-20261010-113813-5303"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -158,7 +158,7 @@
         "E3-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203802-760a"
+            "r-20261010-113814-a639"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -173,7 +173,7 @@
         "E3-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203803-0c87"
+            "r-20261010-113814-daa4"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -198,30 +198,30 @@
       }
     },
     "writing": {
-      "basis": "c25da0aab8da69a4",
+      "basis": "17c1c327a86f2a56",
       "phase": "submit",
       "fig_refs": [
         {
           "artifact_id": "artifacts/figures/fig_c1",
           "version": 1,
-          "sha256": "e4c4d064fa9269b1580c6cd8834429f7652ec2b32aa6fe3ccac82bc63c687dea"
+          "sha256": "32c2b6dd00a671c8cb63b46acc61f99a2943d3c4c99958f045a4983ad7fe642d"
         },
         {
           "artifact_id": "artifacts/figures/fig_c2",
           "version": 1,
-          "sha256": "194352290d4b68e304646fae76d25d954395b685867dca16a51f7c4c03760635"
+          "sha256": "f4d21d47e2ae6e542000193ad991d40d9b60d3081d685e70225b79935c4158b0"
         }
       ],
       "paper_ref": {
         "artifact_id": "paper",
         "version": 2,
-        "sha256": "6100b6d853ff0d83add830abe39002c633e50dfc65e53f29b628f9fdb1f6197a"
+        "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
       },
       "refs": {
         "review": {
           "artifact_id": "paper/review/review_v2.json",
           "version": 1,
-          "sha256": "707f9df2c39cdc964d3ea43afbc1295b5938dd069f1088c5fb8c627a6d686918"
+          "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
         },
         "compile": {
           "artifact_id": "paper/build/compile_report.json",
@@ -236,7 +236,7 @@
         "pdf": {
           "artifact_id": "paper/build/main.pdf",
           "version": 2,
-          "sha256": "efd2728d02763370c55083dd90470a34a2b8182c221cc2edbff25b626e93ff96"
+          "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
         },
         "review_path": "paper/review/review_v2.json"
       }

@@ -4,7 +4,7 @@
   "target": {
     "artifact_id": "paper",
     "version": 2,
-    "sha256": "6100b6d853ff0d83add830abe39002c633e50dfc65e53f29b628f9fdb1f6197a"
+    "sha256": "738f6a713d9d6d73a85853ec4bbd2b5475066751ec88bdac358d5765ecbc6875"
   },
   "previous": null,
   "summary": "论文草稿 v2：7 条论断，2 个 blocker（样例：故意加入的错误论断）",
@@ -13,7 +13,7 @@
     {
       "artifact_id": "paper/review/review_v2.json",
       "version": 1,
-      "sha256": "707f9df2c39cdc964d3ea43afbc1295b5938dd069f1088c5fb8c627a6d686918"
+      "sha256": "df3c4203fdae505942b5e7ac899023e52551400c60992b9e3d4cc65bb305c185"
     },
     {
       "artifact_id": "paper/build/compile_report.json",
@@ -28,11 +28,11 @@
     {
       "artifact_id": "paper/build/main.pdf",
       "version": 2,
-      "sha256": "efd2728d02763370c55083dd90470a34a2b8182c221cc2edbff25b626e93ff96"
+      "sha256": "86e2d83013f33bd528980155b7b92a599152d44d20d600c9b9144b6d79efbb8f"
     }
   ],
   "status": "pending",
-  "created_at": "2026-10-08T20:38:06.611200+08:00",
+  "created_at": "2026-10-10T11:38:17.851054+08:00",
   "decided_at": null,
   "decision_comment": "",
   "decided_by": null,

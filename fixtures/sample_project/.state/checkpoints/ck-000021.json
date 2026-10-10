@@ -1,6 +1,6 @@
 {
   "checkpoint_id": "ck-000021",
-  "saved_at": "2026-10-08T20:38:02.374494+08:00",
+  "saved_at": "2026-10-10T11:38:13.573524+08:00",
   "state": "Executing",
   "resume_to": null,
   "pending_approval": null,
@@ -40,13 +40,13 @@
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "727ce0556e6ad452594a5c7b7ac7ce17e21dbe8f",
+      "commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203756-772f"
+            "r-20261010-113808-e173"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -61,7 +61,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203757-d76a"
+            "r-20261010-113808-6128"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -76,7 +76,7 @@
         "E1-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-cbbf"
+            "r-20261010-113809-6926"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -91,7 +91,7 @@
         "E2-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261008-203758-53a0"
+            "r-20261010-113809-0426"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -106,7 +106,7 @@
         "E2-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261008-203800-0496"
+            "r-20261010-113811-02ea"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -121,8 +121,8 @@
         "E2-seed=2": {
           "status": "running",
           "runs": [
-            "r-20261008-203800-9ea4",
-            "r-20261008-203801-14bc"
+            "r-20261010-113811-67d8",
+            "r-20261010-113812-86a1"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -133,12 +133,12 @@
             "fail_mode": "none"
           },
           "eval_condition": "final",
-          "retry_of": "r-20261008-203800-9ea4"
+          "retry_of": "r-20261010-113811-67d8"
         },
         "E3-seed=0": {
           "status": "running",
           "runs": [
-            "r-20261008-203801-0e8d"
+            "r-20261010-113813-5303"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
