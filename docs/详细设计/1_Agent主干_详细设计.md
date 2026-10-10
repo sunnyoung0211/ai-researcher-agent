@@ -648,7 +648,7 @@ roles:  {lit.coordinator: strong, exp.coder: claude-strong}   # 可写档位名�
 fallbacks: {claude-fast: [gpt-mini]}                 # 主模型连续失败时改用
 ```
 
-模型条目的字段：`model`（LiteLLM 的 `provider/model`）、`key_env`、`api_base`、`max_tokens`、`temperature`（不写 = 不发送；当前的 Claude 模型不接受非默认值）、`params`（原样传给 LiteLLM 的其他参数）、`description`。也可以在任何位置直接写 `provider/model` 而不登记别名。
+模型条目的字段：`model`（LiteLLM 的 `provider/model`；第三方中转站写 `openai/<模型名>` 并设置 `api_base`，只写模型名但有 `api_base` 时自动按 `openai/` 处理）、`key_env`、`api_base`、`max_tokens`、`temperature`（不写 = 不发送；当前的 Claude 模型不接受非默认值）、`params`（原样传给 LiteLLM 的其他参数）、`price`（美元 / 百万 token 的输入、输出价，LiteLLM 不认识的模型用它记账）、`description`。也可以在任何位置直接写 `provider/model` 而不登记别名。
 
 **选择顺序：** 角色（项目 > 用户 > 默认）→ 阶段（项目 > 用户 > 默认）→ 全局档位（项目 > 用户 > 默认）。角色映射到档位名时，继续按阶段、全局档位查找。阶段名取自 `prompt_id` 的前缀（提示文件放在 `stages/<stage>/prompts/`）。
 
@@ -658,7 +658,7 @@ fallbacks: {claude-fast: [gpt-mini]}                 # 主模型连续失败时�
 
 **供应商差异：** 通过 LiteLLM 调用，各家的请求与返回（文本位置、token 用量字段、系统提示、工具调用格式）都统一成 OpenAI 格式；本项目只有 `LiteLLMBackend` 一处接触供应商返回的数据。结构化输出不用任何一家的专有写法（提示要求 JSON → 提取 → 校验 → 不合格让模型改），所以对所有模型通用。默认开启 LiteLLM 的 `drop_params`（丢掉模型不支持的参数）。
 
-**权限：** 每次调用前对模型接口的域名做网络权限检查（`api_base` 的域名，或供应商的默认域名），默认白名单见 3.10。
+**权限：** 每次调用前对模型接口的域名做网络权限检查（`api_base` 的域名，或供应商的默认域名）。模型配置中登记过的接口域名视为已授权（配置文件由用户维护，Agent 无法修改：`${AIR_HOME}` 下只有 `data/` 在可写范围内），所以使用中转站不需要修改每个项目的白名单；其他域名仍按 3.10 的白名单检查。
 
 **查看与测试：** `air models`（已登记的模型、Key 是否已设置、每个阶段实际用哪个模型）、`air models test <名字>`（一次极短的调用）、API `GET /api/models`、`POST /api/models/{name}/test`。
 

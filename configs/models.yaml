@@ -8,6 +8,10 @@
 # - model 用 LiteLLM 的 provider/model 写法，换供应商只改这里，代码不用动；
 # - key_env 只写环境变量名。Key 本身放在环境变量或 ${AIR_HOME}/.env 里，绝不写进任何配置文件；
 # - temperature 不写 = 不发送。较新的 Claude 模型（Opus 5.5 / Sonnet 5.5 / Haiku 5.5）不接受非默认的 temperature；
+# - 第三方中转站（OpenAI 兼容接口）：写 model: openai/<模型名> 并设置 api_base（只写模型名也会自动按 openai/ 处理），
+#   例：relay-gpt: {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY, price: [输入, 输出]}
+#   price 是中转站的价格（美元 / 百万 token），用于预算记账；不写时按偏高的默认价估算；
+# - 这里登记的模型的接口域名，网关调用时视为已授权，不需要再加到每个项目的网络白名单；
 # - 阶段代码只请求档位（fast / strong）或角色名，不写具体模型名。
 
 models:

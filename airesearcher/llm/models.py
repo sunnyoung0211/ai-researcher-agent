@@ -58,17 +58,35 @@ class MissingAPIKey(Exception):
 
 class ModelEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: str  # LiteLLM 格式：provider/model，如 anthropic/claude-sonnet-5-5
+    # LiteLLM 格式：provider/model，如 anthropic/claude-sonnet-5-5。
+    # 第三方中转站（OpenAI 兼容接口）写 openai/<模型名> 并设置 api_base；只写模型名时也会自动按 openai/ 处理
+    model: str
     key_env: str | None = None  # 存放 Key 的环境变量名；本地模型可以不填
     api_base: str | None = None  # 自定义接口地址（本地模型、代理）
     max_tokens: int = 4096
     temperature: float | None = None  # None = 不发送（较新的 Claude 模型不接受非默认值）
     params: dict[str, Any] = Field(default_factory=dict)  # 原样传给 LiteLLM 的其他参数
+    price: tuple[float, float] | None = None  # 美元 / 百万 token（输入, 输出）；中转站等 LiteLLM 不认识的模型用来记账
     description: str = ""
 
     @property
+    def litellm_model(self) -> str:
+        """发给 LiteLLM 的模型名：没写供应商但有 api_base 时，按 OpenAI 兼容接口处理（第三方中转站的常见情况）。"""
+        if "/" not in self.model and self.api_base:
+            return f"openai/{self.model}"
+        return self.model
+
+    @property
+    def problem(self) -> str | None:
+        """配置有明显问题时返回给人看的说明。"""
+        if "/" not in self.litellm_model:
+            return (f"模型 {self.model!r} 没有写供应商：应写成 provider/model，如 openai/{self.model}；"
+                    f"第三方中转站请写 openai/<模型名> 并设置 api_base")
+        return None
+
+    @property
     def provider(self) -> str:
-        return self.model.split("/", 1)[0] if "/" in self.model else "openai"
+        return self.litellm_model.split("/", 1)[0]
 
     @property
     def host(self) -> str | None:
@@ -217,10 +235,14 @@ class ModelRegistry:
             return None
         return bool(get_secret(entry.key_env))
 
+    def hosts(self) -> set[str]:
+        """所有已登记模型的接口域名。模型由用户自己登记，网关调用这些域名时视为已授权（见 gateway._guard_network）。"""
+        return {h for e in self.models.values() if (h := e.host)}
+
     def summary(self, stages: list[str]) -> dict:
         models = []
         for alias, e in sorted(self.models.items()):
-            models.append({"alias": alias, "model": e.model, "provider": e.provider, "key_env": e.key_env,
+            models.append({"alias": alias, "model": e.litellm_model, "provider": e.provider, "key_env": e.key_env,
                            "key_set": self.key_status(e), "api_base": e.api_base, "host": e.host,
                            "max_tokens": e.max_tokens, "description": e.description})
         assignments: dict[str, dict[str, Any]] = {}
@@ -239,6 +261,8 @@ class ModelRegistry:
         for alias, e in self.models.items():
             if self.key_status(e) is False:
                 warnings.append(f"模型 {alias} 需要环境变量 {e.key_env}，但还没有设置")
+            if e.problem:
+                warnings.append(f"{alias}：{e.problem}")
         return {"models": models, "assignments": assignments, "roles": roles, "warnings": warnings,
                 "config_files": {"repo": str(repo_config_path()), "user": str(user_config_path()),
                                  "dotenv": str(dotenv_path())}}
@@ -252,6 +276,10 @@ models:
   claude-fast:   {model: anthropic/claude-haiku-5-5,  key_env: ANTHROPIC_API_KEY, max_tokens: 4096}
   claude-strong: {model: anthropic/claude-sonnet-5-5, key_env: ANTHROPIC_API_KEY, max_tokens: 8192}
   # gpt-mini:    {model: openai/gpt-5-mini, key_env: OPENAI_API_KEY, max_tokens: 4096}
+  # 第三方中转站（OpenAI 兼容接口）：model 写 openai/<模型名>，api_base 写中转站地址，
+  # price 写它的价格（美元/百万 token，输入、输出）：
+  # relay-gpt:   {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY,
+  #               price: [1.0, 4.0]}
   # local-qwen:  {model: ollama/qwen2.5, api_base: "http://localhost:11434"}   # 本地模型，不需要 Key
 
 tiers:                 # 全局默认：fast = 大批量便宜调用，strong = 写作、编码、核验

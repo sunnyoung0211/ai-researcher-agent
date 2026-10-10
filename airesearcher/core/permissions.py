@@ -38,11 +38,13 @@ class Permissions:
             roots.append((p if p.is_absolute() else self.root / p).resolve())
         return roots
 
-    def guard(self, action: Action, target: str, actor: str = "agent") -> None:
+    def guard(self, action: Action, target: str, actor: str = "agent", extra_allow: set[str] | None = None) -> None:
+        """extra_allow：调用方额外允许的域名（如用户在模型配置中登记的接口），只对 network 生效。"""
         cfg = self._config()
         if action == "network":
             host = target.lower().split("://")[-1].split("/")[0].split(":")[0]
-            if not any(host == d or host.endswith("." + d) for d in cfg.network.allow):
+            allow = [*cfg.network.allow, *(extra_allow or ())]
+            if not any(host == d or host.endswith("." + d) for d in allow):
                 self._deny(action, target, "域名不在 permissions.network.allow 白名单中", actor)
         elif action == "exec":
             if target != "local" or not cfg.exec.local:

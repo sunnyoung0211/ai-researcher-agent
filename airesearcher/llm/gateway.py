@@ -122,6 +122,9 @@ class LLMBackend(Protocol):
 # ---------------------------------------------------------------- LiteLLM
 def litellm_kwargs(req: LLMRequest) -> dict[str, Any]:
     """把请求转成 litellm.completion 的参数。只发送配置了的参数（如 temperature 为 None 时不发送）。"""
+    if "/" not in req.model:
+        raise ValueError(f"模型 {req.alias or req.model} 的 model 应写成 provider/model（如 openai/{req.model}）；"
+                         f"第三方中转站请写 openai/<模型名> 并设置 api_base")
     kw: dict[str, Any] = {"model": req.model, "messages": req.messages, "max_tokens": req.max_tokens,
                           "drop_params": True}  # 自动丢掉该模型不支持的参数
     if req.temperature is not None:
@@ -151,6 +154,7 @@ class LiteLLMBackend:
             raise RuntimeError(
                 '没有安装 LiteLLM：请运行 pip install -e ".[llm]"，或在 project.yaml 中使用假实现'
             ) from e
+        litellm.suppress_debug_info = True  # 不打印 LiteLLM 的调试提示（如不认识的模型的价格查询）
         try:
             resp = litellm.completion(**kwargs)
         except Exception as e:  # LiteLLM 的异常类型很多，按状态码区分可重试的
@@ -180,6 +184,16 @@ class LiteLLMBackend:
             output_tokens=getattr(usage, "completion_tokens", 0) or 0, usd=usd or None, model=req.model,
             tool_calls=calls, finish_reason=getattr(choice, "finish_reason", None), assistant_message=assistant,
         )
+
+
+def entry_usd(entry: Any, raw: RawCompletion) -> float:
+    """费用：LiteLLM 算出的值 > 模型配置里的 price > 价格兜底表。"""
+    if raw.usd is not None:
+        return raw.usd
+    if entry.price:
+        pin, pout = entry.price
+        return round((raw.input_tokens * pin + raw.output_tokens * pout) / 1_000_000, 6)
+    return estimate_usd(entry.litellm_model, raw.input_tokens, raw.output_tokens)
 
 
 def extract_json(text: str) -> str:
@@ -271,7 +285,7 @@ class LLMGateway:
     def _request(self, m: ResolvedModel, role: str, prompt: Any, messages: list[dict],
                  schema_name: str | None = None, tools: list[dict] | None = None) -> LLMRequest:
         e = m.entry
-        return LLMRequest(role=role, prompt_id=prompt.id, prompt_version=prompt.version, model=e.model,
+        return LLMRequest(role=role, prompt_id=prompt.id, prompt_version=prompt.version, model=e.litellm_model,
                           alias=m.alias, messages=messages, max_tokens=e.max_tokens, temperature=e.temperature,
                           key_env=e.key_env, api_base=e.api_base, params=e.params, tools=tools,
                           schema_name=schema_name)
@@ -329,16 +343,20 @@ class LLMGateway:
                                cached, attempts, error is None, schema_name)
         if error is not None:
             raise LLMOutputError(f"{prompt_id}：{attempts} 次尝试后仍未得到可用结果（{schema_name}）：{error}")
-        return LLMResponse(text=text, parsed=parsed, call_id=call_id, model=used.entry.model, prompt_id=prompt.id,
+        return LLMResponse(text=text, parsed=parsed, call_id=call_id, model=used.entry.litellm_model,
+                           prompt_id=prompt.id,
                            prompt_version=prompt.version, cached=cached,
                            usage={"input_tokens": total_in, "output_tokens": total_out, "usd": round(total_usd, 6)})
 
     def _usd(self, raw: RawCompletion, m: ResolvedModel) -> float:
-        return raw.usd if raw.usd is not None else estimate_usd(m.entry.model, raw.input_tokens, raw.output_tokens)
+        return entry_usd(m.entry, raw)
 
     def _guard_network(self, m: ResolvedModel, role: str) -> None:
+        """模型接口的网络权限：模型配置里登记过的接口域名视为已授权（配置文件由用户自己维护，
+        Agent 无法修改）；其他域名仍按 project.yaml 的 permissions.network.allow 检查。"""
         host = m.entry.host or m.entry.provider
-        self.project.permissions.guard("network", host, actor=f"agent:{role}")
+        self.project.permissions.guard("network", host, actor=f"agent:{role}",
+                                       extra_allow=self.registry().hosts())
 
     def _call_with_fallback(self, role: str, prompt: Any, messages: list[dict], candidates: list[ResolvedModel],
                             schema_name: str | None = None, tools: list[dict] | None = None
@@ -371,7 +389,7 @@ class LLMGateway:
                 cached: bool, attempts: int, ok: bool, schema: str | None, kind: str = "complete") -> str:
         call_id = f"call-{now():%Y%m%d%H%M%S}-{rand_hex(6)}"
         p = self.project
-        model = m.entry.model
+        model = m.entry.litellm_model
         with self._lock:
             append_jsonl(p.root / ".llm" / "calls.jsonl", {
                 "call_id": call_id, "ts": now().isoformat(), "kind": kind, "role": role, "prompt_id": prompt_id,
@@ -491,8 +509,8 @@ def ping_model(alias: str, project_models: dict | None = None, backend: LLMBacke
         alias, entry = reg.entry(alias)
     except Exception as e:
         return {**out, "error": str(e)}
-    out["model"] = entry.model
-    req = LLMRequest(role="ping", prompt_id="ping/ping", prompt_version=0, model=entry.model, alias=alias,
+    out["model"] = entry.litellm_model
+    req = LLMRequest(role="ping", prompt_id="ping/ping", prompt_version=0, model=entry.litellm_model, alias=alias,
                      messages=[{"role": "user", "content": "请只回复两个字母：OK"}],
                      max_tokens=min(entry.max_tokens, 1024), temperature=entry.temperature, key_env=entry.key_env,
                      api_base=entry.api_base, params=entry.params)
@@ -505,6 +523,6 @@ def ping_model(alias: str, project_models: dict | None = None, backend: LLMBacke
         if secret:
             msg = msg.replace(secret, "***")  # 报错信息里不能出现 Key
         return {**out, "error": msg[:1000], "seconds": round(time.monotonic() - t0, 2)}
-    usd = raw.usd if raw.usd is not None else estimate_usd(entry.model, raw.input_tokens, raw.output_tokens)
+    usd = entry_usd(entry, raw)
     return {**out, "ok": True, "reply": raw.text[:200], "seconds": round(time.monotonic() - t0, 2),
             "input_tokens": raw.input_tokens, "output_tokens": raw.output_tokens, "usd": round(usd, 6)}

@@ -333,7 +333,17 @@ stages:
 ```
 
 - `fast` / `strong` 是“档位”：`fast` 用于大批量、便宜的调用，`strong` 用于写作、编码、核验。阶段代码里只写档位，不写具体模型名，所以换模型不用改代码。
-- 支持 Anthropic、OpenAI、本地模型（Ollama）等，写法见 `configs/models.yaml` 里的说明。使用本地模型或代理时，要把它的域名加到项目 `project.yaml` 的 `permissions.network.allow` 里（`localhost` 已默认允许）。
+- 支持 Anthropic、OpenAI、本地模型（Ollama）、**第三方中转站**等，写法见 `configs/models.yaml` 里的说明。
+  中转站一般是 OpenAI 兼容接口，这样写：
+
+  ```yaml
+  models:
+    relay-gpt: {model: openai/gpt-6.1-sol, api_base: "https://中转站域名/v1", key_env: RELAY_API_KEY, price: [1.0, 4.0]}
+  ```
+
+  `model` 必须是“供应商/模型名”的形式（中转站写 `openai/`；只写模型名但填了 `api_base` 时会自动补上 `openai/`）；
+  `price` 是中转站的价格（美元 / 百万 token），用于预算记账，不写时按偏高的默认价估算。
+- 你登记的模型的接口域名会被自动允许访问，不需要改项目的网络白名单。
 
 **开发者：真实模型测试**（会产生几美分费用，CI 中不运行）：
 
