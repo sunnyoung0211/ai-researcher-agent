@@ -144,3 +144,18 @@ def test_label_and_cancel_run(sample_server):
     assert r.exit_code == 1 and "trusted" in r.output
     out = run("cancel-run", rid)  # 已结束的运行：取消不生效，显示当前状态
     assert "已请求取消" in out and "成功" in out
+
+
+def test_template_commands(sample_server, tmp_path):
+    import zipfile
+
+    z = tmp_path / "acl.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("main.tex", "\\documentclass{article}\n")
+    assert "默认模板" in run("template", "list") and "还没有上传过模板" in run("template", "list")
+    out = run("template", "upload", str(z))
+    assert "tpl-01 v1" in out and "main.tex" in out
+    out = run("template", "upload", str(z), "--to", "tpl-01")
+    assert "tpl-01 v2" in out
+    out = run("template", "list")
+    assert "当前使用：tpl-01 v2" in out and "未检查" in out

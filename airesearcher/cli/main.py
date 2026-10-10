@@ -31,6 +31,8 @@ dev_app = typer.Typer(help="开发调试命令（不经过后台，直接操作�
 app.add_typer(dev_app, name="dev")
 models_app = typer.Typer(help="查看、测试已配置的大模型。不带子命令时列出当前配置。", invoke_without_command=True)
 app.add_typer(models_app, name="models")
+template_app = typer.Typer(help="论文模板：上传 zip、查看已上传的版本。", no_args_is_help=True)
+app.add_typer(template_app, name="template")
 skills_app = typer.Typer(help="查看、验证 skill（不经过后台）。", no_args_is_help=True)
 app.add_typer(skills_app, name="skills")
 console = Console()
@@ -477,6 +479,42 @@ def logs(args: list[str] = typer.Argument(..., help="[项目编号] 运行编号
         if not follow or c["eof"]:
             break
         time.sleep(1)
+
+
+# ====================================================================== air template
+@template_app.command("upload")
+def template_upload(zip_path: Path = typer.Argument(..., help="模板 zip 文件"),
+                    to: str = typer.Option(None, "--to", help="作为已有模板的新版本，如 tpl-01"),
+                    pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """上传论文模板（zip），项目改用这个模板。"""
+    if not zip_path.is_file():
+        fail(f"找不到文件 {zip_path}")
+    pid = resolve_pid(pid)
+    data = {"request_id": rid(), **({"template_id": to} if to else {})}
+    info = api("POST", f"/api/projects/{pid}/templates", data=data,
+               files={"file": (zip_path.name, zip_path.read_bytes(), "application/zip")})
+    console.print(f"[green]✓ 已上传为 {info['template_id']} v{info['version']}[/]（{len(info['files'])} 个文件，"
+                  f"入口候选：{', '.join(info['tex_files']) or '无'}）。论文阶段会检查模板，有问题时会提问。")
+
+
+@template_app.command("list")
+def template_list(pid: str = typer.Option(None, "-p", "--project", help="项目编号（省略时用最近创建的项目）")):
+    """列出已上传的模板版本和检查结果。"""
+    pid = resolve_pid(pid)
+    lst = api("GET", f"/api/projects/{pid}/templates")
+    cur = lst["current"]
+    console.print("当前使用：" + (f"{cur['id']} v{cur['version']}" if cur else "默认模板"))
+    if not lst["templates"]:
+        console.print("还没有上传过模板。上传：air template upload <zip 文件>")
+        return
+    t = Table("模板", "版本", "文件名", "入口", "缺失依赖", "最小编译", "使用中")
+    for x in lst["templates"]:
+        chk = x["check"] or {}
+        missing = ", ".join(m.get("name", "?") for m in chk.get("missing", [])) if chk else ""
+        ok = {True: "成功", False: "失败"}.get(chk.get("minimal_compile_ok"), "未检查") if chk else "未检查"
+        t.add_row(x["template_id"], str(x["version"]), escape(x["filename"] or ""), chk.get("entry") or "",
+                  escape(missing), ok, "✓" if x["in_use"] else "")
+    console.print(t)
 
 
 # ====================================================================== air models

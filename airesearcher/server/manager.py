@@ -7,10 +7,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from airesearcher.core import templates
 from airesearcher.core.errors import NotFound
 from airesearcher.core.fsutil import append_jsonl, now
 from airesearcher.core.models.approval import ApprovalBrief
 from airesearcher.core.models.run import RunLabel
+from airesearcher.core.models.template import TemplateInfo
 from airesearcher.core.project import Project
 from airesearcher.core.workspace import air_home, load_registry
 from airesearcher.engine.engine import ProjectEngine
@@ -41,6 +43,7 @@ class ProjectManager:
         self._create_requests: dict[str, str] = {}
         self._lock = threading.RLock()
         self.startup_report: dict[str, list] = {}
+        self._template_requests: dict[str, TemplateInfo] = {}
 
     # ---------------------------------------------------------------- 生命周期
     def startup(self) -> None:
@@ -179,3 +182,16 @@ class ProjectManager:
             p.events.append("run.labeled", f"运行 {run_id} 被标注为 {label}" + (f"：{reason}" if reason else ""),
                             actor=by, run_id=run_id, data={"label": label, "reason": reason})
         return row
+
+    # ---------------------------------------------------------------- 模板
+    def upload_template(self, pid: str, data: bytes, filename: str, template_id: str | None = None,
+                        request_id: str = "") -> TemplateInfo:
+        p = self.get(pid)
+        with self._lock:
+            if request_id and request_id in self._template_requests:
+                return self._template_requests[request_id]
+            info = templates.import_zip(p, data, filename, template_id, actor="user")
+            if request_id:
+                self._template_requests[request_id] = info
+        self.engine(pid).wake()
+        return info

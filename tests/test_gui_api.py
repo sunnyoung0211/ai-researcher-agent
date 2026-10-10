@@ -176,3 +176,69 @@ def test_run_labels(sample_client):
 
     assert c.post(f"{base}/r-nope/label", json={"label": "invalid"}).status_code == 404
     assert c.post(f"{base}/{bad}/label", json={"label": "maybe"}).status_code == 422
+
+
+def make_zip(files: dict[str, bytes | str], symlink: str | None = None) -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+        if symlink:
+            info = zipfile.ZipInfo(symlink)
+            info.external_attr = 0o120777 << 16
+            zf.writestr(info, "/etc/passwd")
+    return buf.getvalue()
+
+
+def test_template_upload_and_list(sample_client):
+    c, p = sample_client
+    base = f"/api/projects/{p.project_id}/templates"
+    assert c.get(base).json() == {"current": None, "templates": [], "default_check": None}
+    tpl = make_zip({"acl/main.tex": "\\documentclass{article}\n", "acl/acl.sty": "%", "acl/__MACOSX/x": "",
+                    "acl/figs/logo.png": b"\x89PNG"})
+    r = c.post(base, files={"file": ("acl.zip", tpl, "application/zip")}, data={"request_id": "t1"})
+    assert r.status_code == 200, r.text
+    info = r.json()
+    assert info["template_id"] == "tpl-01" and info["version"] == 1 and info["in_use"]
+    assert info["files"] == ["acl.sty", "figs/logo.png", "main.tex"] and info["tex_files"] == ["main.tex"]
+    assert (p.root / "templates/tpl-01/v1/original/main.tex").exists()  # 顶层文件夹 acl/ 被去掉
+    assert c.post(base, files={"file": ("acl.zip", tpl)}, data={"request_id": "t1"}).json() == info  # 去重
+
+    # 修复后作为同一模板的新版本上传；项目改用新版本
+    r = c.post(base, files={"file": ("acl-fixed.zip", tpl)}, data={"template_id": "tpl-01", "request_id": "t2"})
+    assert r.json()["version"] == 2
+    lst = c.get(base).json()
+    assert lst["current"] == {"id": "tpl-01", "version": 2}
+    assert [(t["version"], t["in_use"]) for t in lst["templates"]] == [(1, False), (2, True)]
+    from airesearcher.core.project import Project
+
+    assert Project.open(p.root).config.template == {"id": "tpl-01", "version": 2}
+    assert p.archive.latest("templates/tpl-01/v2") is not None
+    assert "template.uploaded" in [e.type for e in p.events.all()]
+    # 论文阶段写了 check.json 后，列表里能看到
+    (p.root / "templates/tpl-01/v2/check.json").write_text('{"entry": "main.tex", "missing": []}', encoding="utf-8")
+    assert c.get(base).json()["templates"][1]["check"]["entry"] == "main.tex"
+
+
+@pytest.mark.parametrize("files,symlink,msg", [
+    ({"../evil.tex": "x"}, None, "不安全的路径"),
+    ({"/abs/main.tex": "x"}, None, "不安全的路径"),
+    ({"main.tex": "x"}, "link.tex", "符号链接"),
+    ({"readme.txt": "x"}, None, "没有 .tex"),
+])
+def test_template_upload_rejects_bad_zips(sample_client, files, symlink, msg):
+    c, p = sample_client
+    r = c.post(f"/api/projects/{p.project_id}/templates", files={"file": ("t.zip", make_zip(files, symlink))})
+    assert r.status_code == 422 and msg in r.json()["error"]["message"]
+    assert not (p.root / "templates").exists() or not any((p.root / "templates").rglob("*.tex"))
+
+
+def test_template_upload_not_zip_and_unknown_id(sample_client):
+    c, p = sample_client
+    base = f"/api/projects/{p.project_id}/templates"
+    assert c.post(base, files={"file": ("t.zip", b"not a zip")}).json()["error"]["message"] == "上传的文件不是 zip"
+    r = c.post(base, files={"file": ("t.zip", make_zip({"main.tex": "x"}))}, data={"template_id": "tpl-09"})
+    assert r.status_code == 404
