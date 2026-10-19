@@ -41,6 +41,13 @@ def material(ctx):
 
 
 def check_evidence(evidence, papers, refs, weak, *, paper_id=None):
+    aliases = {}
+    for canonical, (card, _) in refs.items():
+        alias = f"{card.paper_id}__{card.role}#{canonical.rsplit('#', 1)[1]}"
+        aliases.setdefault(alias, set()).add(canonical)
+    for i, ref in enumerate(evidence):
+        if ref not in papers and ref not in refs and len(aliases.get(ref, set())) == 1:
+            evidence[i] = next(iter(aliases[ref]))
     if len(set(evidence)) != len(evidence):
         raise ValueError("Evidence references must be unique")
     for ref in evidence:

@@ -9,11 +9,13 @@ from airesearcher.core.models.literature import PaperRecord
 from airesearcher.engine.stage import Continue, Error, StageContext, StepResult, Stop, Wait
 from airesearcher.services.literature import load_papers
 
-from .dedup import deduplicate
+from .dedup import deduplicate, same_paper
 from .fulltext import fulltext_step
 from .merge import merge_step
 from .models import IdeaBrief, QueryPlan
+from .publication import submit_step, write_step
 from .readers import gap_step, read_step
+from .revision import detect_revision, incremental_step, revise_step
 from .screening import screen_step
 from .selection import gap_table_step, refine_step, score_step
 from .sources.arxiv import ArxivSource
@@ -38,6 +40,7 @@ class IdeaStage:
 
     def step(self, ctx: StageContext) -> StepResult:
         state = ctx.scratch.setdefault("idea", {})
+        detect_revision(ctx, state)
         phase = state.setdefault("phase", "parse")
         ctx.progress(f"Literature stage: {phase}")
         if phase == "parse":
@@ -88,8 +91,16 @@ class IdeaStage:
             return score_step(ctx, state)
         if phase == "gap_table":
             return gap_table_step(ctx, state)
+        if phase == "write" and self.stop_after == "gap_table":
+            return Stop("Selection complete; stopped at the requested development checkpoint.")
         if phase == "write":
-            return Stop("Selection, scores, and comparison are ready; final document publication comes next.")
+            return write_step(ctx, state)
+        if phase == "submit":
+            return submit_step(ctx, state)
+        if phase == "revise":
+            return revise_step(ctx, state)
+        if phase == "revision_search":
+            return incremental_step(ctx, state, self)
         return Error(f"Unknown idea phase: {phase}", retryable=False)
 
     def _source(self, ctx: StageContext, state: dict) -> LiteratureSource:
@@ -144,7 +155,10 @@ class IdeaStage:
             sid = hashlib.sha256(snap["snapshot_id"].encode()).hexdigest()[:20]
             _save(ctx, f"idea/search_snapshots/{sid}.json", snap, "search_snapshot")
             papers.extend(PaperRecord.model_validate(p) for p in receipt["papers"])
-        unique = deduplicate(papers)[:limit]
+        candidates = deduplicate(papers)
+        excluded = [PaperRecord.model_validate(p) for p in state.get("exclude_papers", [])]
+        candidates = [p for p in candidates if not any(same_paper(p, old) for old in excluded)]
+        unique = candidates[:limit]
         existing = load_papers(ctx.root)
         unique = unique_citation_keys(unique, existing)
         # Re-finalizing search must preserve later screening/full-text annotations.

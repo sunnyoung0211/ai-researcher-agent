@@ -102,14 +102,16 @@ class DemoLLM(FakeLLM):
                     "resolution": "needs_human", "accepted_evidence": [], "quotes": [],
                     "explanation": "Simulated review placeholder; no semantic conflict resolution performed.",
                 }]
-            elif req.prompt_id in {"idea/refine", "idea/score", "idea/gap_table"} and (
+            elif req.prompt_id in {"idea/refine", "idea/score", "idea/gap_table", "idea/revise"} and (
                     req.prompt_id not in self._fixed_prompts):
                 block = re.search(
                     r'<untrusted_document source="selection_context">\s*(.*?)\s*</untrusted_document>', text, re.S
                 ).group(1)
                 context = json.loads(block)
-                if req.prompt_id == "idea/refine":
+                if req.prompt_id in {"idea/refine", "idea/revise"}:
                     value = simulated_selection(context)
+                    if req.prompt_id == "idea/revise":
+                        value.update(needs_more_literature=False, new_queries=[])
                 elif req.prompt_id == "idea/score":
                     value = {name: {"score": 3, "rationale": "Simulated score; research quality is unverified.",
                                     "evidence": [], "to_verify": True}
@@ -173,7 +175,7 @@ def main() -> None:
     parser.add_argument("--reading-mode", choices=["multi", "single"], default="multi", help=(
         "Use multi-role or single-role reading"
     ))
-    parser.add_argument("--stop-after", choices=["merge", "gap_table"], default="merge",
+    parser.add_argument("--stop-after", choices=["merge", "gap_table", "submit"], default="submit",
                         help="Stop at a requested development checkpoint")
     args = parser.parse_args()
     if args.workspace.exists() and any(args.workspace.iterdir()):
@@ -203,12 +205,13 @@ def main() -> None:
         tick = engine.tick()
         if tick.result is not None:
             print(describe(tick.result))
-        if engine.state in (S.Paused, S.Failed):
+        if engine.state in (S.Paused, S.Failed, S.IdeaPending):
             break
         if tick.seconds:
             time.sleep(min(tick.seconds, max(0, deadline - time.monotonic())))
-    expected_phase = "refine" if args.stop_after == "merge" else "write"
-    if engine.state != S.Paused or engine.ck.scratch.get("idea", {}).get("phase") != expected_phase:
+    expected_phase = {"merge": "refine", "gap_table": "write", "submit": "submit"}[args.stop_after]
+    expected_state = S.IdeaPending if args.stop_after == "submit" else S.Paused
+    if engine.state != expected_state or engine.ck.scratch.get("idea", {}).get("phase") != expected_phase:
         raise RuntimeError(f"The demo did not reach the requested checkpoint: {engine.state} {engine.ck.reason}")
     print(json.dumps(engine.ck.scratch["idea"], ensure_ascii=False, indent=2))
     print(f"Artifact directory: {project.root / 'idea'}")

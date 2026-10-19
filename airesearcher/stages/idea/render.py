@@ -69,7 +69,7 @@ def render_gap_table(output, papers):
              "| Work | Task / Data | Method | Setting | Compute | Evaluation | Proposed Difference |",
              "|---|---|---|---|---|---|---|"]
     for row in output.rows:
-        cells = [f"[{_inline(row.paper_id)}] {_inline(papers[row.paper_id].title)}"]
+        cells = [f"[{_inline(row.paper_id)}] {_inline(papers[row.paper_id].title)}".replace("|", "&#124;")]
         for name in columns:
             cell = row.cells[name]
             text = _inline(cell.text).replace("|", "&#124;")

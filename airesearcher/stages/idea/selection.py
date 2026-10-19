@@ -144,6 +144,7 @@ def request_output(ctx, state, name, schema, validate, context):
                            "validation_errors": [a.get("error", "") for a in attempts["attempts"][:-1]]},
             )
             attempt["trace"] = trace(out)
+            attempt["raw_output"] = out.parsed.model_dump(mode="json")
             validate(out.parsed)
         except Exception as exc:
             attempt.update(status="failed", error=f"{type(exc).__name__}: {exc}")
@@ -167,9 +168,12 @@ def selection_context(ctx):
 def refine_step(ctx, state):
     try:
         task = task_config(ctx)
+        context = selection_context(ctx)
+        if state.get("revision_input"):
+            context["revision_request"] = load_json(ctx, state["revision_input"])
         receipt = request_output(ctx, state, "refine", RefinementOutput,
                                  lambda out: normalize_idea(ctx, out.idea, task, out.task_fit),
-                                 selection_context(ctx))
+                                 context)
         output = RefinementOutput.model_validate(receipt["output"])
         idea = normalize_idea(ctx, output.idea, task, output.task_fit)
         save_json(ctx, "idea/selected.json", idea.model_dump(mode="json"))
@@ -184,13 +188,35 @@ def refine_step(ctx, state):
     return Continue("Task-constrained idea saved; scoring comes next")
 
 
+
+
+def normalize_scores(ctx, output, papers, refs, weak):
+    """Keep task-context and circular score references out of the literature evidence list."""
+    idea = load_json(ctx, "idea/selected.json")
+    for name in DIMENSIONS:
+        dimension = getattr(output, name)
+        retained, removed = [], []
+        for ref in dimension.evidence:
+            if ref.startswith("idea#") and ref.split("#", 1)[1] in idea:
+                removed.append(ref)
+            elif re.fullmatch(r"(novelty|feasibility|impact|testability|risk)#rationale", ref):
+                removed.append(ref)
+            else:
+                retained.append(ref)
+        dimension.evidence = retained
+        dimension.to_verify |= check_evidence(retained, papers, refs, weak)
+        if removed:
+            dimension.to_verify = True
+            dimension.rationale += (" Context or circular references excluded from literature evidence: "
+                                    + ", ".join(removed))
+
+
 def score_step(ctx, state):
     try:
         summary, papers, refs, weak = material(ctx)
 
         def validate(output):
-            for name in DIMENSIONS:
-                check_evidence(getattr(output, name).evidence, papers, refs, weak)
+            normalize_scores(ctx, output, papers, refs, weak)
 
         receipt = request_output(ctx, state, "score", ScoreOutput, validate,
                                  {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")})

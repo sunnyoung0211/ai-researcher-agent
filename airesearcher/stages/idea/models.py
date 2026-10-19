@@ -1,5 +1,6 @@
 """Internal idea-stage output schemas; frozen handoff models remain unchanged."""
 
+import re
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator
@@ -28,6 +29,9 @@ class QueryGroup(BaseModel):
     def nonempty_queries(cls, queries: list[str]) -> list[str]:
         if any(not q.strip() for q in queries):
             raise ValueError("Queries must not be empty or whitespace-only")
+        for query in queries:
+            if (len(query.split()) > 6 or re.search(r'\b(?:AND|OR|NOT)\b|["():]', query)):
+                raise ValueError("Use at most six plain keyword tokens, without Boolean operators or field syntax")
         return [q.strip() for q in queries]
 
 
@@ -171,3 +175,8 @@ class GapRow(BaseModel):
 
 class GapTableOutput(BaseModel):
     rows: list[GapRow]
+
+
+class RevisionOutput(RefinementOutput):
+    needs_more_literature: bool
+    new_queries: list[NonemptyText] = Field(max_length=3)

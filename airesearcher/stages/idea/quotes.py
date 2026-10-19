@@ -38,7 +38,16 @@ class QuoteVerifier:
             raise ValueError("Reading-item content and source location must not be empty")
         if based_on == "abstract_only" and item.source_loc != "abstract":
             raise ValueError("source_loc must be abstract when only the abstract was read")
-        item.quote_verified = self.verify(item.quote) if item.quote else None
+        if item.quote and len(tokens(item.quote)) > 40:
+            item.quote = None
+            item.quote_verified = False
+            marker = "[TO VERIFY: oversized quote discarded]"
+            if marker not in item.content:
+                item.content += " " + marker
+        else:
+            item.quote_verified = self.verify(item.quote) if item.quote else (
+                False if item.quote_verified is False else None)
+
         page = re.fullmatch(r"p\.?\s*(\d+)", item.source_loc, re.I)
         if page and page.group(1) not in self.pages:
             item.quote_verified = False

@@ -74,7 +74,7 @@ def test_two_roles_actual_source_and_trace(air_home):
     result = cards(project)
     assert {c.role for c in result} == {"methods", "feasibility"}
     assert all(c.paper_id == papers[0].paper_id and c.based_on == "abstract_only" for c in result)
-    assert all(c.call_id and c.model and c.prompt_version == 1 for c in result)
+    assert all(c.call_id and c.model and c.prompt_version == 2 for c in result)
     assert all(i.quote_verified is True and i.kind == "author_claim" for c in result for i in c.items)
     assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert not project.approvals.pending() and not (project.root / "idea/selected.md").exists()
@@ -128,7 +128,7 @@ def test_failure_retry_once_then_continue(air_home):
     assert not json.loads((project.root / "idea/reading_status.json").read_text(encoding="utf-8"))["failed"]
 
 
-@pytest.mark.parametrize("bad", ["fields", "abstract_location", "long_quote"])
+@pytest.mark.parametrize("bad", ["fields", "abstract_location"])
 def test_repeated_bad_output_is_recorded_as_failed(air_home, bad):
     script = scripts()
     if bad == "fields":
@@ -255,3 +255,19 @@ def test_invalid_concurrency_fails_without_call(air_home):
     _, engine, _ = seed(air_home, concurrency=0)
     result = engine.tick().result
     assert isinstance(result, Error) and not result.retryable and not engine.llm.backend.calls
+
+
+def test_oversized_quote_downgrades_item_without_losing_other_reading_fields(air_home):
+    script = scripts()
+    result = output(METHOD_FIELDS)
+    result["items"][0]["quote"] = "word " * 41
+    script["idea/methods_reader"] = [result]
+    project, engine, _ = seed(air_home, script=script)
+    drive(engine, S.Paused)
+    method = next(c for c in cards(project) if c.role == "methods")
+    item = method.items[0]
+    assert item.quote is None and item.quote_verified is False
+    assert item.kind == "agent_inference" and item.confidence == "low"
+    assert "oversized quote discarded" in item.content
+    assert len(cards(project)) == 2
+    assert sum(r.prompt_id == "idea/methods_reader" for r in engine.llm.backend.calls) == 1

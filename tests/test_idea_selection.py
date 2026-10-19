@@ -202,3 +202,74 @@ def test_saved_output_cannot_be_reused_with_different_evidence(air_home):
     count = len(engine.llm.backend.calls)
     assert isinstance(refine_step(ctx, state), Error)
     assert len(engine.llm.backend.calls) == count
+
+
+@pytest.mark.parametrize("query", ["LoRA OR BERT", '"LoRA" classification', "title:LoRA",
+                                  "one two three four five six seven"])
+def test_queries_reject_cross_source_incompatible_syntax(query):
+    from airesearcher.stages.idea.models import QueryGroup
+    with pytest.raises(ValidationError):
+        QueryGroup(question="Methods", purpose="Search", queries=[query])
+
+
+def test_only_unambiguous_registered_evidence_aliases_are_normalized(air_home):
+    from airesearcher.stages.idea.evidence import check_evidence, material
+    _, _, ctx, cards = ready(air_home)
+    _, papers, refs, weak = material(ctx)
+    evidence = [f"{cards[0].paper_id}__{cards[0].role}#0"]
+    assert not check_evidence(evidence, papers, refs, weak)
+    assert evidence == [cards[0].card_id + "#0"]
+    with pytest.raises(ValueError):
+        check_evidence([f"{cards[0].paper_id}__{cards[0].role}#999"], papers, refs, weak)
+
+
+def test_context_and_circular_scores_are_not_literature_evidence(air_home):
+    from airesearcher.stages.idea.evidence import material
+    from airesearcher.stages.idea.selection import normalize_scores
+    _, engine, ctx, _ = ready(air_home)
+    refine_step(ctx, engine.ck.scratch["idea"])
+    output = ScoreOutput.model_validate(scores(["idea#research_question", "novelty#rationale"]))
+    _, papers, refs, weak = material(ctx)
+    normalize_scores(ctx, output, papers, refs, weak)
+    assert all(not getattr(output, name).evidence and getattr(output, name).to_verify for name in scores())
+    assert "excluded" in output.impact.rationale
+
+
+def test_failed_score_cache_can_be_revalidated_without_another_model_call(air_home):
+    from airesearcher.core.fsutil import sha256_bytes
+    from airesearcher.stages.idea.recovery import recover_cached_score
+    from airesearcher.stages.idea.selection import round_path, trace
+
+    project, engine, ctx, cards = ready(air_home)
+    state = engine.ck.scratch["idea"]
+    refine_step(ctx, state)
+    cfg = project.config.model_copy(deep=True)
+    cfg.llm_cache = "record"
+    project.save_config(cfg, summary="Record a simulated historical score reply")
+    alias = f"{cards[0].paper_id}__{cards[0].role}#0"
+    reply = scores([alias, "idea#research_question", "novelty#rationale"])
+    engine.llm.backend.script["idea/score"] = [reply]
+    engine.llm.backend._fixed_prompts.add("idea/score")
+    context = {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")}
+    out = ctx.llm.complete(
+        role="idea.score", prompt_id="idea/score", tier="strong", response_schema=ScoreOutput, max_retries=0,
+        variables={"schema_json": ScoreOutput.model_json_schema(), "goal": ctx.project.goal,
+                   "context_block": ctx.llm.wrap_untrusted(json.dumps(context, ensure_ascii=False),
+                                                           source="selection_context"),
+                   "validation_errors": ["Historical strict format failure"]},
+    )
+    digest = sha256_bytes(json.dumps(context, ensure_ascii=False, sort_keys=True).encode())
+    save_json(ctx, round_path(state, "score_attempts"), {
+        "input_sha256": digest, "attempts": [
+            {"status": "failed", "error": "Historical strict format failure"},
+            {"status": "failed", "error": "Historical alias format rejection", "trace": trace(out)},
+        ],
+    })
+    count = len(engine.llm.backend.calls)
+    recover_cached_score(ctx, state)
+    assert len(engine.llm.backend.calls) == count
+    receipt = load_json(ctx, round_path(state, "score"))
+    assert receipt["recovered_from_cache"]
+    assert receipt["output"]["novelty"]["evidence"] == [cards[0].card_id + "#0"]
+    assert receipt["output"]["novelty"]["to_verify"]
+    assert receipt["original_output"]["novelty"]["evidence"] == reply["novelty"]["evidence"]
