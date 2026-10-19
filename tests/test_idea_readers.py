@@ -49,7 +49,9 @@ def seed(air_home, *, count=1, full=False, mode="multi", script=None, concurrenc
                                       "selected_for_reading": True}, deep=True) for i in range(count)]
     gateway = LLMGateway(project, backend=backend, backoff_base=0) if backend else demo_gateway(
         project, script if script is not None else scripts(full, mode))
-    engine = ProjectEngine(project, llm=gateway, stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+    engine = ProjectEngine(project, llm=gateway,
+                           stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     if full:
         for i, paper in enumerate(papers):
             path = f"idea/fulltext/test{i}.reading.txt"
@@ -152,7 +154,9 @@ def test_saved_receipt_restores_card_without_reading_again(air_home):
     engine.ck.scratch["idea"] = {"phase": "read"}
     engine._save()
     resumed = ProjectEngine(Project.open(project.root), llm=demo_gateway(project, {
-        "idea/gap_analyst": [{"gaps": []}]}), stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+        "idea/gap_analyst": [{"gaps": []}]}),
+                           stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     drive(resumed, S.Paused)
     assert len(cards(project)) == 2 and missing.exists()
     assert [r.prompt_id for r in resumed.llm.backend.calls] == ["idea/gap_analyst", "idea/coordinator_merge"]

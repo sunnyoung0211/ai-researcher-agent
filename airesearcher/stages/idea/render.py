@@ -60,3 +60,24 @@ def render_reading_summary(summary, conflicts, refs):
     if not summary.incomplete_reading:
         lines.append("None.")
     return "\n".join(lines) + "\n"
+
+
+def render_gap_table(output, papers):
+    columns = ("task_data", "method", "setting", "compute", "evaluation", "difference")
+    lines = ["# Literature Comparison", "",
+             "Comparison within the retrieval scope; proposed differences are not proof of novelty.", "",
+             "| Work | Task / Data | Method | Setting | Compute | Evaluation | Proposed Difference |",
+             "|---|---|---|---|---|---|---|"]
+    for row in output.rows:
+        cells = [f"[{_inline(row.paper_id)}] {_inline(papers[row.paper_id].title)}"]
+        for name in columns:
+            cell = row.cells[name]
+            text = _inline(cell.text).replace("|", "&#124;")
+            if cell.to_verify:
+                text += " **[TO VERIFY]**"
+            text += " " + "; ".join(_inline(ref) for ref in cell.evidence)
+            cells.append(text)
+        lines.append("| " + " | ".join(cells) + " |")
+    if not output.rows:
+        lines.extend(["", "No registered citations are available; all comparisons remain unverified."])
+    return "\n".join(lines) + "\n"

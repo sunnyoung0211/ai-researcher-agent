@@ -38,7 +38,8 @@ def seed(air_home, papers, script=None, limit=8):
     if script is None:
         script = {"idea/screen": [response(papers[i:i + 10]) for i in range(0, len(papers), 10)]}
     engine = ProjectEngine(project, llm=demo_gateway(project, script),
-                           stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+                           stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     ctx = engine.build_context()
     save_json(ctx, "idea/brief.json", demo_responses()["idea/parse_input"][0])
     save_json(ctx, "idea/queries.json", demo_responses()["idea/plan_queries"][0])
@@ -121,7 +122,9 @@ def test_restart_does_not_repeat_saved_score_batch(air_home):
     engine.ck.scratch["idea"] = {"phase": "screen"}
     engine._save()
     resumed = ProjectEngine(Project.open(project.root), llm=demo_gateway(project, {
-        "idea/screen": [response(papers[10:])]}), stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+        "idea/screen": [response(papers[10:])]}),
+                           stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     drive(resumed, S.Paused)
     assert sum(r.prompt_id == "idea/screen" for r in resumed.llm.backend.calls) == 1
     before = (project.root / "idea/literature.jsonl").read_text(encoding="utf-8")

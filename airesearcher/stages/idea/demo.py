@@ -102,7 +102,55 @@ class DemoLLM(FakeLLM):
                     "resolution": "needs_human", "accepted_evidence": [], "quotes": [],
                     "explanation": "Simulated review placeholder; no semantic conflict resolution performed.",
                 }]
+            elif req.prompt_id in {"idea/refine", "idea/score", "idea/gap_table"} and (
+                    req.prompt_id not in self._fixed_prompts):
+                block = re.search(
+                    r'<untrusted_document source="selection_context">\s*(.*?)\s*</untrusted_document>', text, re.S
+                ).group(1)
+                context = json.loads(block)
+                if req.prompt_id == "idea/refine":
+                    value = simulated_selection(context)
+                elif req.prompt_id == "idea/score":
+                    value = {name: {"score": 3, "rationale": "Simulated score; research quality is unverified.",
+                                    "evidence": [], "to_verify": True}
+                             for name in ("novelty", "feasibility", "impact", "testability", "risk")}
+                else:
+                    value = {"rows": [{"paper_id": pid, "cells": {
+                        name: {"text": "To verify", "evidence": [], "to_verify": True}
+                        for name in ("task_data", "method", "setting", "compute", "evaluation", "difference")
+                    }} for pid in context["idea"]["citations"]]}
+                self.script[req.prompt_id] = [value]
             return super().call(req)
+
+
+
+
+def simulated_selection(context):
+    """Build an explicitly simulated draft from supplied task metadata."""
+    task = context["task"]
+    primary = next((m for m in task["metrics"] if m["required"]), task["metrics"][0])
+    methods = task["methods_available"] or ["baseline", "main"]
+    return {
+        "idea": {
+            "idea_id": "idea-demo", "title": "Simulated LoRA workflow draft",
+            "research_question": "Simulated workflow question; LoRA research validity has not been established.",
+            "motivation": "Exercise the literature-stage handoff using simulated model output.",
+            "hypotheses": [{"id": "H1", "statement": "Proposed method improves the task metric (unverified).",
+                            "falsified_if": "The mean improvement across three seeds is non-positive."}],
+            "contributions": ["Simulated comparison proposal requiring real literature and task verification."],
+            "task": {}, "data": [],
+            "baselines": [{"id": "B1", "name": methods[0], "why": "Task-provided baseline.", "citations": []}],
+            "methods": [{"id": "M1", "name": methods[-1], "description": "Task-provided method.", "citations": []}],
+            "metrics": [{**{k: m[k] for k in ("name", "direction")}, "primary": m["name"] == primary["name"]}
+                        for m in task["metrics"]],
+            "budget": {}, "stopping_conditions": ["Stop at the budget limit.", "Stop after the approved comparisons."],
+            "expected_difficulties": ["Simulation cannot establish research quality."],
+            "open_questions": ["Simulated output: verify all research claims before approval."],
+            "citations": [p["paper_id"] for p in context["literature"]["papers"]],
+            "scores_ref": "idea/scores.json", "gap_table_ref": "idea/gap_table.md",
+        },
+        "task_fit": "unknown", "task_fit_reason": "The simulation does not verify LoRA training readiness.",
+    }
 
 
 def demo_gateway(project, script=None):
@@ -125,6 +173,8 @@ def main() -> None:
     parser.add_argument("--reading-mode", choices=["multi", "single"], default="multi", help=(
         "Use multi-role or single-role reading"
     ))
+    parser.add_argument("--stop-after", choices=["merge", "gap_table"], default="merge",
+                        help="Stop at a requested development checkpoint")
     args = parser.parse_args()
     if args.workspace.exists() and any(args.workspace.iterdir()):
         parser.error("Use an empty directory; the demo will not overwrite an existing project")
@@ -136,7 +186,8 @@ def main() -> None:
     )
     source = None if args.live_retrieval or args.replay else FakeLiterature()
     engine = ProjectEngine(project, llm=demo_gateway(project),
-                           stages={"idea": IdeaStage(source, fulltext_download=args.fetch_fulltext)}, retry_delay=0)
+                           stages={"idea": IdeaStage(source, fulltext_download=args.fetch_fulltext,
+                                                     stop_after=args.stop_after)}, retry_delay=0)
     print("Model responses are preset; retrieval mode: " +
           ("live retrieval" if args.live_retrieval else "local snapshot replay" if args.replay else "local fixtures"))
     print("Relevance scores are fixed at 3 for workflow demonstration and do not represent actual paper relevance.")
@@ -156,8 +207,9 @@ def main() -> None:
             break
         if tick.seconds:
             time.sleep(min(tick.seconds, max(0, deadline - time.monotonic())))
-    if engine.state != S.Paused or engine.ck.scratch.get("idea", {}).get("phase") != "refine":
-        raise RuntimeError(f"The demo did not complete literature merging: {engine.state} {engine.ck.reason}")
+    expected_phase = "refine" if args.stop_after == "merge" else "write"
+    if engine.state != S.Paused or engine.ck.scratch.get("idea", {}).get("phase") != expected_phase:
+        raise RuntimeError(f"The demo did not reach the requested checkpoint: {engine.state} {engine.ck.reason}")
     print(json.dumps(engine.ck.scratch["idea"], ensure_ascii=False, indent=2))
     print(f"Artifact directory: {project.root / 'idea'}")
 

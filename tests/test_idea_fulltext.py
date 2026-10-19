@@ -47,7 +47,7 @@ def make_engine(air_home, rows, handler, *, download=True, clock=None):
     ticks = iter(range(1000, 100000, 10))
     wire = GuardedHTTP(project.permissions.guard, client=httpx.Client(transport=httpx.MockTransport(handler)),
                        clock=clock or (lambda: next(ticks)))
-    stage = IdeaStage(fulltext_download=download, fulltext_http=wire)
+    stage = IdeaStage(fulltext_download=download, fulltext_http=wire, stop_after="merge")
     engine = ProjectEngine(project, llm=demo_gateway(project), stages={"idea": stage}, retry_delay=0)
     append_papers(engine.build_context(), rows)
     engine.ck.scratch["idea"] = {"phase": "fulltext"}

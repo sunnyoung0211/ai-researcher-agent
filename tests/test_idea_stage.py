@@ -25,7 +25,7 @@ def make_project(air_home, **kwargs):
 
 def make_engine(project, source, script=None):
     return ProjectEngine(project, llm=fake_gateway(project, script) if script else demo_gateway(project),
-                         stages={"idea": IdeaStage(source, fulltext_download=False)}, retry_delay=0)
+                         stages={"idea": IdeaStage(source, fulltext_download=False, stop_after="merge")}, retry_delay=0)
 
 
 def test_parse_search_and_dedup(air_home):

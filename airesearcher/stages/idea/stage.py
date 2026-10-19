@@ -15,6 +15,7 @@ from .merge import merge_step
 from .models import IdeaBrief, QueryPlan
 from .readers import gap_step, read_step
 from .screening import screen_step
+from .selection import gap_table_step, refine_step, score_step
 from .sources.arxiv import ArxivSource
 from .sources.base import LiteratureSource
 from .sources.http import GuardedHTTP, SourceWait
@@ -29,7 +30,9 @@ from .storage import save_json as _save
 class IdeaStage:
     name = "idea"
 
-    def __init__(self, source: LiteratureSource | None = None, *, fulltext_download=True, fulltext_http=None):
+    def __init__(self, source: LiteratureSource | None = None, *, fulltext_download=True,
+                 fulltext_http=None, stop_after=None):
+        self.stop_after = stop_after
         self.source = source
         self.fulltext_download, self.fulltext_http = fulltext_download, fulltext_http
 
@@ -77,11 +80,16 @@ class IdeaStage:
             return gap_step(ctx, state)
         if phase == "merge":
             return merge_step(ctx, state)
+        if phase == "refine" and self.stop_after == "merge":
+            return Stop("Merge complete; stopped at the requested development checkpoint.")
         if phase == "refine":
-            return Stop(
-                "The reading summary and conflict ledger are ready; research-question refinement is pending. "
-                "No final idea or approval has been generated."
-            )
+            return refine_step(ctx, state)
+        if phase == "score":
+            return score_step(ctx, state)
+        if phase == "gap_table":
+            return gap_table_step(ctx, state)
+        if phase == "write":
+            return Stop("Selection, scores, and comparison are ready; final document publication comes next.")
         return Error(f"Unknown idea phase: {phase}", retryable=False)
 
     def _source(self, ctx: StageContext, state: dict) -> LiteratureSource:

@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 
+from airesearcher.core.models.idea import SelectedIdea
 from airesearcher.core.models.literature import CardItem
 
 
@@ -134,3 +135,39 @@ class ReadingSummary(BaseModel):
     abstract_only_papers: list[str]
     incomplete_reading: list[str] = Field(default_factory=list)
     unresolved_conflicts: list[str] = Field(default_factory=list)
+
+
+class RefinementOutput(BaseModel):
+    idea: SelectedIdea
+    task_fit: Literal["supported", "mismatch", "unknown"]
+    task_fit_reason: NonemptyText
+
+
+class StrictDimension(BaseModel):
+    score: int = Field(ge=1, le=5, strict=True)
+    rationale: NonemptyText
+    evidence: list[str]
+    to_verify: bool
+
+
+class ScoreOutput(BaseModel):
+    novelty: StrictDimension
+    feasibility: StrictDimension
+    impact: StrictDimension
+    testability: StrictDimension
+    risk: StrictDimension
+
+
+class GapCell(BaseModel):
+    text: NonemptyText
+    evidence: list[str]
+    to_verify: bool = False
+
+
+class GapRow(BaseModel):
+    paper_id: NonemptyText
+    cells: dict[str, GapCell]
+
+
+class GapTableOutput(BaseModel):
+    rows: list[GapRow]

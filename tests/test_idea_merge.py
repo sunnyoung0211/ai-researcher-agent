@@ -65,7 +65,9 @@ def seed(air_home, *, count=1, fields=None, full=True, output=None, review=None,
     if backend is not None:
         from airesearcher.llm.gateway import LLMGateway
         gateway = LLMGateway(project, backend=backend(script), backoff_base=0)
-    engine = ProjectEngine(project, llm=gateway, stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+    engine = ProjectEngine(project, llm=gateway,
+                           stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     ctx = engine.build_context()
     append_papers(ctx, papers)
     save_json(ctx, "idea/reading_input.json", {"goal": project.config.goal, "reading_mode": "multi", "papers": sources})
@@ -203,7 +205,8 @@ def test_saved_results_restore_missing_projection_without_model_calls(air_home):
     missing = project.root / "idea/reading_summary.md"
     missing.unlink()
     resumed = ProjectEngine(Project.open(project.root), llm=fake_gateway(project, {}),
-                            stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+                            stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     resumed.ck.state = S.IdeaDrafting
     resumed.ck.scratch["idea"] = {"phase": "merge"}
     resumed._save()
@@ -222,7 +225,8 @@ def test_interrupted_review_is_not_repeated(air_home):
         "resolution": "needs_human", "accepted_evidence": [], "trace": {}, "note": "Interrupted",
     })
     resumed = ProjectEngine(Project.open(project.root), llm=fake_gateway(project, {}),
-                            stages={"idea": IdeaStage(fulltext_download=False)}, retry_delay=0)
+                            stages={"idea": IdeaStage(fulltext_download=False, stop_after="merge")},
+                           retry_delay=0)
     drive(resumed, S.Paused)
     assert read(project, "conflict_reviews/K1.json")["status"] == "interrupted"
     assert not resumed.llm.backend.calls and read(project, "conflicts.json")["review_attempts"] == 1
