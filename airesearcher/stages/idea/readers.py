@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -109,6 +110,20 @@ def _save_card(ctx, card):
 
 
 def read_step(ctx, state):
+    started = time.perf_counter()
+    try:
+        return _read_step(ctx, state)
+    finally:
+        state["reading_active_seconds"] = state.get("reading_active_seconds", 0.0) + time.perf_counter() - started
+        if state.get("phase") == "gap" and ctx.archive.latest("idea/reading_status.json"):
+            report = json.loads((ctx.root / "idea/reading_status.json").read_text(encoding="utf-8"))
+            report["active_seconds"] = state["reading_active_seconds"]
+            report["timing_definition"] = ("Reading-step active wall time; "
+                                           "excludes inter-step waits and offline downtime.")
+            save_json(ctx, "idea/reading_status.json", report)
+
+
+def _read_step(ctx, state):
     concurrency = ctx.project.limits.reader_concurrency
     if concurrency < 1:
         return Error("reader_concurrency must be greater than 0", retryable=False)
