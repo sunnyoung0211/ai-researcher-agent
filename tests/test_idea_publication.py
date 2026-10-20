@@ -167,7 +167,7 @@ def test_cached_recovery_reuses_paid_reading_without_calling_backend(air_home):
     seed_cached_run(target, original.root)
     assert not target.archive.latest("idea/selected.md")
     assert target.config.llm_cache == "replay"
-    assert target.config.prompt_pins["idea/methods_reader"] == 2
+    assert target.config.prompt_pins["idea/methods_reader"] == 3
     engine = ProjectEngine(target, llm=demo_gateway(target),
                            stages={"idea": IdeaStage(source, fulltext_download=False)}, retry_delay=0)
     for _ in range(50):

@@ -11,6 +11,7 @@ from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.services.literature import load_papers
 
 from .evidence import load_json
+from .goal_scope import validate_goal_scope
 from .models import QueryPlan, RevisionOutput
 from .selection import normalize_idea, request_output, selection_context, task_config
 from .storage import append_papers, save_json
@@ -68,6 +69,7 @@ def revise_step(ctx, state):
         if output.needs_more_literature and not output.new_queries:
             raise ValueError("A literature revision requires at least one new query")
         idea = normalize_idea(ctx, output.idea, task, output.task_fit)
+        save_json(ctx, "idea/goal_scope.json", validate_goal_scope(ctx.project.goal, idea))
         save_json(ctx, "idea/selected.json", idea.model_dump(mode="json"))
         save_json(ctx, "idea/refinement_status.json", {"task_fit": output.task_fit,
                                                       "task_fit_reason": output.task_fit_reason,

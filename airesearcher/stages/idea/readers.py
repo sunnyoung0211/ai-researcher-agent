@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from airesearcher.core.fsutil import now, sha256_bytes
@@ -61,7 +62,7 @@ def _manifest(ctx):
     return json.loads((ctx.root / path).read_text(encoding="utf-8"))
 
 
-def _validate_items(items, role, source):
+def _validate_items(items, role, source, audit=None):
     fields = [item.field for item in items]
     if len(fields) != len(set(fields)) or set(fields) != set(ROLE_FIELDS[role]):
         raise ValueError(
@@ -69,7 +70,10 @@ def _validate_items(items, role, source):
             "duplicates or extra fields"
         )
     checker = QuoteVerifier(source["text"])
-    return [checker.check(item, source["based_on"]) for item in items]
+    checked = [checker.check_with_report(item, source["based_on"]) for item in items]
+    if audit is not None:
+        audit.extend(report for _, report in checked)
+    return [item for item, _ in checked]
 
 
 def _read_one(ctx, source, task, goal):
@@ -85,11 +89,13 @@ def _read_one(ctx, source, task, goal):
     )
     if not out.parsed.relevance_to_question.strip():
         raise ValueError("Relevance to the research question must not be empty")
-    return ReadingCard(card_id=task["card_id"], paper_id=source["paper_id"], role=role,
-                       based_on=source["based_on"], items=_validate_items(out.parsed.items, role, source),
+    audit = []
+    card = ReadingCard(card_id=task["card_id"], paper_id=source["paper_id"], role=role,
+                       based_on=source["based_on"], items=_validate_items(out.parsed.items, role, source, audit),
                        relevance_to_question=out.parsed.relevance_to_question, model=out.model,
                        prompt_id=out.prompt_id, prompt_version=out.prompt_version,
                        call_id=out.call_id, created_at=now())
+    return card, audit
 
 
 def _save_card(ctx, card):
@@ -131,6 +137,9 @@ def read_step(ctx, state):
                 return Error("Reading-card identity does not match the task", retryable=False)
             card.items = _validate_items(card.items, task["role"], source)
             _save_card(ctx, card)
+            if saved.get("quote_checks") is not None:
+                save_json(ctx, f"idea/quote_checks/{card.card_id}.json", {"items": saved["quote_checks"],
+                          "input_sha256": source["input_sha256"], "call_id": card.call_id})
         task.update(status=saved["status"], attempts=saved["attempts"], last_error=saved.get("last_error", ""))
     pending = [t for t in tasks if t["status"] == "pending"][:6]
     if pending:
@@ -143,9 +152,9 @@ def read_step(ctx, state):
                 saved = {"input_sha256": sources[task["paper_id"]]["input_sha256"],
                          "attempts": task["attempts"], "last_error": ""}
                 try:
-                    card = future.result()
+                    card, audit = future.result()
                     task.update(status="done", last_error="")
-                    saved.update(status="done", card=card.model_dump(mode="json"))
+                    saved.update(status="done", card=card.model_dump(mode="json"), quote_checks=audit)
                 except Exception as exc:
                     task.update(status="failed" if task["attempts"] >= 2 else "pending",
                                 last_error=f"{type(exc).__name__}: {exc}")
@@ -157,7 +166,13 @@ def read_step(ctx, state):
     cards = [ReadingCard.model_validate_json((ctx.root / f"idea/reading_cards/{t['card_id']}.json").read_text(
         encoding="utf-8")) for t in tasks if t["status"] == "done"]
     items = [item for card in cards for item in card.items]
-    report = {"reading_mode": manifest["reading_mode"], "planned_tasks": len(tasks), "done": len(cards),
+    audits = []
+    for card in cards:
+        path = f"idea/quote_checks/{card.card_id}.json"
+        if ctx.archive.latest(path):
+            audits.extend(json.loads((ctx.root / path).read_text(encoding="utf-8"))["items"])
+    report = {"quote_check_reasons": dict(Counter(a["reason"] for a in audits)),
+              "reading_mode": manifest["reading_mode"], "planned_tasks": len(tasks), "done": len(cards),
               "failed": [t for t in tasks if t["status"] == "failed"], "card_ids": [c.card_id for c in cards],
               "quote_verified_count": sum(i.quote_verified is True for i in items),
               "quote_failed_count": sum(i.quote_verified is False for i in items),

@@ -74,7 +74,7 @@ def test_two_roles_actual_source_and_trace(air_home):
     result = cards(project)
     assert {c.role for c in result} == {"methods", "feasibility"}
     assert all(c.paper_id == papers[0].paper_id and c.based_on == "abstract_only" for c in result)
-    assert all(c.call_id and c.model and c.prompt_version == 2 for c in result)
+    assert all(c.call_id and c.model and c.prompt_version == 3 for c in result)
     assert all(i.quote_verified is True and i.kind == "author_claim" for c in result for i in c.items)
     assert engine.ck.scratch["idea"]["phase"] == "refine"
     assert not project.approvals.pending() and not (project.root / "idea/selected.md").exists()

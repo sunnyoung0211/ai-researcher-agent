@@ -14,6 +14,7 @@ from airesearcher.core.workspace import resolve_task_dir
 from airesearcher.engine.stage import Continue, Error, Stop
 
 from .evidence import check_evidence, compact_material, load_json, material
+from .goal_scope import goal_contract, validate_goal_scope
 from .models import GapTableOutput, RefinementOutput, ScoreOutput
 from .render import render_gap_table
 from .storage import save_json
@@ -40,6 +41,7 @@ def trace(out):
 
 def normalize_idea(ctx, idea, task, fit="unknown"):
     idea = idea.model_copy(deep=True)
+    validate_goal_scope(ctx.project.goal, idea)
     summary, papers, _, _ = material(ctx)
     for field in ("idea_id", "title", "research_question", "motivation"):
         if not getattr(idea, field).strip():
@@ -96,10 +98,10 @@ def normalize_idea(ctx, idea, task, fit="unknown"):
                           usage=proposed[d.name].usage if d.name in proposed else "As specified by the task")
                  for d in task.data]
     if not task.data:
-        questions.append("No dataset is registered in the selected task; LoRA training readiness is unverified.")
+        questions.append("No dataset is registered in the selected task; execution readiness is unverified.")
     if fit != "supported" or task.name == "smoke" or task.domain == "generic":
         questions.append("TASK FIT TO VERIFY: the selected task may be a workflow fixture; "
-                         "this idea does not establish an executable LoRA training setup.")
+                         "this idea does not establish an executable research setup.")
     for item in [*idea.baselines, *idea.methods]:
         if item.name not in task.methods_available:
             questions.append(f"Task extension required before execution: method '{item.name}' is not registered.")
@@ -159,7 +161,8 @@ def request_output(ctx, state, name, schema, validate, context):
 
 
 def selection_context(ctx):
-    return {"brief": load_json(ctx, "idea/brief.json"), "literature": compact_material(ctx),
+    return {"goal_scope": goal_contract(ctx.project.goal),
+            "brief": load_json(ctx, "idea/brief.json"), "literature": compact_material(ctx),
             "task": task_config(ctx).model_dump(mode="json"),
             "project_budget": {k: v.model_dump() for k, v in ctx.project.budget.items()},
             "constraints": ctx.project.constraints}
@@ -176,6 +179,7 @@ def refine_step(ctx, state):
                                  context)
         output = RefinementOutput.model_validate(receipt["output"])
         idea = normalize_idea(ctx, output.idea, task, output.task_fit)
+        save_json(ctx, "idea/goal_scope.json", validate_goal_scope(ctx.project.goal, idea))
         save_json(ctx, "idea/selected.json", idea.model_dump(mode="json"))
         save_json(ctx, "idea/refinement_status.json", {"task_fit": output.task_fit,
                                                       "task_fit_reason": output.task_fit_reason,

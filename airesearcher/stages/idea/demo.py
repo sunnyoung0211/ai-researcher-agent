@@ -132,12 +132,19 @@ def simulated_selection(context):
     task = context["task"]
     primary = next((m for m in task["metrics"] if m["required"]), task["metrics"][0])
     methods = task["methods_available"] or ["baseline", "main"]
+    targets = context.get("goal_scope", {}).get("comparison_targets", [])
+    if targets:
+        methods = targets
+    question = ("Simulated comparison of " + " and ".join(targets) + "; no research conclusion is established."
+                if targets else "Simulated workflow question; research validity has not been established.")
+    hypothesis = ("The proposed comparison of " + " and ".join(targets) + " improves the task metric (unverified)."
+                  if targets else "Proposed method improves the task metric (unverified).")
     return {
         "idea": {
             "idea_id": "idea-demo", "title": "Simulated LoRA workflow draft",
-            "research_question": "Simulated workflow question; LoRA research validity has not been established.",
+            "research_question": question,
             "motivation": "Exercise the literature-stage handoff using simulated model output.",
-            "hypotheses": [{"id": "H1", "statement": "Proposed method improves the task metric (unverified).",
+            "hypotheses": [{"id": "H1", "statement": hypothesis,
                             "falsified_if": "The mean improvement across three seeds is non-positive."}],
             "contributions": ["Simulated comparison proposal requiring real literature and task verification."],
             "task": {}, "data": [],
