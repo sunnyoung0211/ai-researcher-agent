@@ -12,11 +12,10 @@ from airesearcher.core.models.idea import SelectedIdea
 from airesearcher.core.project import Project
 from airesearcher.llm.cache import CacheMiss, LLMCache
 from airesearcher.llm.gateway import UNTRUSTED_NOTICE, LLMGateway, extract_json
-
-from .goal_scope import validate_goal_scope
-from .models import ReaderOutput
-from .quotes import QuoteVerifier
-from .readers import ROLE_FIELDS
+from airesearcher.stages.idea.goal_scope import validate_goal_scope
+from airesearcher.stages.idea.models import ReaderOutput
+from airesearcher.stages.idea.quotes import QuoteVerifier
+from airesearcher.stages.idea.readers import ROLE_FIELDS
 
 
 class NoModelBackend:

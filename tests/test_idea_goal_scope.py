@@ -2,7 +2,7 @@
 
 import pytest
 
-from airesearcher.engine.stage import Error
+from airesearcher.engine.stage import Stop
 from airesearcher.stages.idea.goal_scope import comparison_targets, validate_goal_scope
 from airesearcher.stages.idea.selection import normalize_idea, refine_step, task_config
 
@@ -59,6 +59,6 @@ def test_two_bad_refinement_replies_stop_without_publishing(air_home):
     engine.llm.backend.script["idea/refine"] = [reply]
     engine.llm.backend._fixed_prompts.add("idea/refine")
     result = refine_step(ctx, engine.ck.scratch["idea"])
-    assert isinstance(result, Error)
+    assert isinstance(result, Stop) and result.question is not None
     assert sum(r.prompt_id == "idea/refine" for r in engine.llm.backend.calls) == 2
     assert not project.archive.latest("idea/selected.json")

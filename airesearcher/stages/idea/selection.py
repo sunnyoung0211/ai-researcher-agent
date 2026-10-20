@@ -13,6 +13,7 @@ from airesearcher.core.models.plan import TaskConfig
 from airesearcher.core.workspace import resolve_task_dir
 from airesearcher.engine.stage import Continue, Error, Stop
 
+from .attempts import ATTEMPTS_PER_WINDOW, SelectionNeedsDecision, prepare_window, request_retry
 from .evidence import check_evidence, compact_material, load_json, material
 from .goal_scope import goal_contract, validate_goal_scope
 from .models import GapTableOutput, RefinementOutput, ScoreOutput
@@ -116,7 +117,7 @@ def normalize_idea(ctx, idea, task, fit="unknown"):
 
 
 def request_output(ctx, state, name, schema, validate, context):
-    """Persist attempts before calling; allow one explicit semantic/schema repair."""
+    """Persist calls; allow one repair per window and ask before retrying blocked calls."""
     path = round_path(state, name)
     digest = sha256_bytes(json.dumps(context, ensure_ascii=False, sort_keys=True).encode())
     if ctx.archive.latest(path):
@@ -130,9 +131,16 @@ def request_output(ctx, state, name, schema, validate, context):
                 else {"attempts": [], "input_sha256": digest})
     if attempts["input_sha256"] != digest:
         raise ValueError("Selection attempt inputs changed; start a new selection round.")
-    if attempts["attempts"] and attempts["attempts"][-1]["status"] == "started":
-        raise RuntimeError("A model call was interrupted; inspect its usage before explicitly retrying.")
-    while len(attempts["attempts"]) < 2:
+    records = attempts["attempts"]
+    if records and records[-1]["status"] == "done":
+        output = schema.model_validate(records[-1]["raw_output"])
+        validate(output)
+        receipt = {"output": output.model_dump(mode="json"), "trace": records[-1]["trace"],
+                   "input_sha256": digest}
+        save_json(ctx, path, receipt)
+        return receipt
+    start = prepare_window(ctx, state, name, attempts_path, attempts)
+    while len(attempts["attempts"]) - start < ATTEMPTS_PER_WINDOW:
         attempt = {"status": "started"}
         attempts["attempts"].append(attempt)
         save_json(ctx, attempts_path, attempts)
@@ -157,7 +165,7 @@ def request_output(ctx, state, name, schema, validate, context):
         receipt = {"output": out.parsed.model_dump(mode="json"), "trace": trace(out), "input_sha256": digest}
         save_json(ctx, path, receipt)
         return receipt
-    raise ValueError("The output failed validation after the initial call and one repair; inspect attempt receipts.")
+    request_retry(ctx, state, name, attempts_path, attempts, "exhausted its bounded attempts")
 
 
 def selection_context(ctx):
@@ -184,6 +192,8 @@ def refine_step(ctx, state):
         save_json(ctx, "idea/refinement_status.json", {"task_fit": output.task_fit,
                                                       "task_fit_reason": output.task_fit_reason,
                                                       "trace": receipt["trace"]})
+    except SelectionNeedsDecision as exc:
+        return exc.stop
     except RuntimeError as exc:
         return Stop(str(exc))
     except (ValueError, KeyError, OSError) as exc:
@@ -237,6 +247,8 @@ def score_step(ctx, state):
                             model=receipt["trace"]["model"], prompt_version=receipt["trace"]["prompt_version"])
         save_json(ctx, "idea/scores.json", scores.model_dump(mode="json"), "scores")
         save_json(ctx, "idea/score_status.json", {"trace": receipt["trace"]})
+    except SelectionNeedsDecision as exc:
+        return exc.stop
     except RuntimeError as exc:
         return Stop(str(exc))
     except (ValueError, KeyError, OSError) as exc:
@@ -274,6 +286,8 @@ def gap_table_step(ctx, state):
                   {**output.model_dump(mode="json"), "trace": receipt["trace"]}, "gap_table")
         ctx.archive.put("idea/gap_table.md", "gap_table", render_gap_table(output, papers),
                         parents=[ctx.archive.latest("idea/gap_table.json")], producer="agent:idea/gap_table")
+    except SelectionNeedsDecision as exc:
+        return exc.stop
     except RuntimeError as exc:
         return Stop(str(exc))
     except (ValueError, KeyError, OSError) as exc:

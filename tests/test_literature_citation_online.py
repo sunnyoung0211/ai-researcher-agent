@@ -41,15 +41,19 @@ def test_default_offline_and_registry_precedence_never_request(citation):
     assert not requests
 
 
-def test_online_success_is_read_only(citation):
+def test_online_success_preserves_artifacts_and_audits_permission(citation):
     project, _, _, requests, install = citation
-    before = {str(p.relative_to(project.root)): p.read_bytes() for p in project.root.rglob('*') if p.is_file()}
+    before = {str(p.relative_to(project.root)): p.read_bytes() for p in project.root.rglob('*')
+              if p.is_file() and p.name != 'research_log.jsonl'}
     install(lambda r: httpx.Response(200))
     result = check(citation)
     assert result.status == 'verified' and 'content claims are not verified' in result.note
     assert [r.method for r in requests] == ['HEAD']
-    after = {str(p.relative_to(project.root)): p.read_bytes() for p in project.root.rglob('*') if p.is_file()}
+    after = {str(p.relative_to(project.root)): p.read_bytes() for p in project.root.rglob('*')
+             if p.is_file() and p.name != 'research_log.jsonl'}
     assert after == before
+    assert any(event.type == "permission.granted" and event.actor == "service:literature"
+               for event in project.events.all())
 
 
 @pytest.mark.parametrize('code', [403, 404, 429, 500])
@@ -77,7 +81,8 @@ def test_head_fallback_streams_without_consuming_body(citation, code):
 def test_redirect_targets_are_validated_before_contact(citation, target):
     _, _, _, requests, install = citation
     install(lambda r: httpx.Response(302, headers={'location': target}))
-    assert check(citation).status == 'source_unreachable'
+    result = check(citation)
+    assert result.status == 'verified' and 'not completed' in result.note
     assert len(requests) == 1
 
 
@@ -105,8 +110,34 @@ def test_timeout_and_permission_failure_do_not_leak_urls(citation):
     data['permissions']['network']['allow'] = []
     cfg.write_text(yaml.safe_dump(data), encoding='utf-8')
     requests.clear()
-    assert check(citation).status == 'source_unreachable'
+    result = check(citation)
+    assert result.status == 'verified' and 'not performed' in result.note
     assert not requests
     cfg.write_text('permissions: [invalid', encoding='utf-8')
-    assert check(citation).status == 'source_unreachable'
+    result = check(citation)
+    assert result.status == 'verified' and 'not performed' in result.note
+    assert not requests
+
+
+def test_unlisted_doi_is_unchecked_and_denial_is_audited(citation):
+    project, paper, registry, requests, install = citation
+    registry.write_text(paper.model_copy(update={"url": "https://doi.org/10.5555/example"}).model_dump_json() + "\n",
+                        encoding="utf-8")
+    install(lambda r: pytest.fail("An unlisted DOI host must not be contacted"))
+    result = check(citation)
+    assert result.status == "verified" and "not performed" in result.note
+    assert not requests
+    assert any(event.type == "permission.denied" and event.actor == "service:literature"
+               and event.data["target"] == "doi.org" for event in project.events.all())
+
+
+def test_deadline_before_first_request_is_unchecked(citation, monkeypatch):
+    from types import SimpleNamespace
+
+    _, _, _, requests, install = citation
+    install(lambda r: pytest.fail("An expired check must not send a request"))
+    ticks = iter([0, 21])
+    monkeypatch.setattr(literature, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    result = check(citation)
+    assert result.status == "verified" and "not performed" in result.note
     assert not requests

@@ -9,7 +9,7 @@ from airesearcher.core.models.literature import PaperRecord
 from airesearcher.engine.stage import Continue, Error, StageContext, StepResult, Stop, Wait
 from airesearcher.services.literature import load_papers
 
-from .dedup import deduplicate, same_paper
+from .dedup import PaperIdentity, deduplicate, same_paper
 from .fulltext import fulltext_step
 from .merge import merge_step
 from .models import IdeaBrief, QueryPlan
@@ -156,7 +156,7 @@ class IdeaStage:
             _save(ctx, f"idea/search_snapshots/{sid}.json", snap, "search_snapshot")
             papers.extend(PaperRecord.model_validate(p) for p in receipt["papers"])
         candidates = deduplicate(papers)
-        excluded = [PaperRecord.model_validate(p) for p in state.get("exclude_papers", [])]
+        excluded = [PaperIdentity.model_validate(p) for p in state.get("exclude_papers", [])]
         candidates = [p for p in candidates if not any(same_paper(p, old) for old in excluded)]
         unique = candidates[:limit]
         existing = load_papers(ctx.root)

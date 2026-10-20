@@ -16,9 +16,9 @@ from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import describe
 from airesearcher.llm.gateway import LLMGateway
 from airesearcher.llm.models import get_secret
+from airesearcher.stages.idea.stage import IdeaStage
 
 from .budgeted import RATES, BudgetedBackend
-from .stage import IdeaStage
 
 
 def model_config():
@@ -57,9 +57,9 @@ def repair_queries(project):
     """Replace incompatible LoRA demo queries while preserving the original archived plan."""
     if "lora" not in project.config.goal.casefold():
         raise ValueError("The deterministic query repair is limited to this LoRA workflow example.")
-    from .evidence import load_json
-    from .models import QueryPlan
-    from .storage import save_json
+    from airesearcher.stages.idea.evidence import load_json
+    from airesearcher.stages.idea.models import QueryPlan
+    from airesearcher.stages.idea.storage import save_json
 
     prior = project.archive.latest("idea/queries.json")
     plan = QueryPlan.model_validate({"subquestions": [
@@ -136,14 +136,14 @@ def main():
             print("A prior request has unknown cost; manual usage review is required.", flush=True)
             break
         if project.config.llm_cache == "replay" and engine.ck.scratch.get("idea", {}).get("phase") == "gap":
-            from .evidence import load_json
+            from airesearcher.stages.idea.evidence import load_json
             if load_json(engine.build_context(), "idea/reading_status.json")["failed"]:
                 print("Cached reading recovery was incomplete; no new paid calls will be scheduled.", flush=True)
                 break
             from .recovery import finish_replay
             finish_replay(project)
         if engine.ck.scratch.get("idea", {}).get("phase") == "refine":
-            from .evidence import load_json
+            from airesearcher.stages.idea.evidence import load_json
             status = load_json(engine.build_context(), "idea/merge_status.json")
             if status["needs_human"]:
                 print("Unresolved literature conflicts require human review before further paid requests.", flush=True)

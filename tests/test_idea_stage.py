@@ -8,10 +8,10 @@ from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.services.literature import load_papers
 from airesearcher.stages import load_stage
-from airesearcher.stages.idea.demo import demo_gateway
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.testing.fake_literature import FakeLiterature
 from airesearcher.testing.fake_llm import fake_gateway
+from scripts.literature.demo import demo_gateway
 
 from .helpers import drive
 

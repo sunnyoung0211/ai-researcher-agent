@@ -14,12 +14,12 @@ from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Wait
 from airesearcher.services.literature import load_papers
 from airesearcher.stages.idea import pdf_text
-from airesearcher.stages.idea.demo import demo_gateway
 from airesearcher.stages.idea.pdf_text import extract_pdf, reading_excerpt
 from airesearcher.stages.idea.sources.http import GuardedHTTP, SourceFailure
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers
 from airesearcher.testing.fake_literature import FakeLiterature
+from scripts.literature.demo import demo_gateway
 
 from .helpers import drive
 

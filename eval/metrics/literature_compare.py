@@ -1,6 +1,10 @@
-"""Run the literature comparison evaluator after installing the project in editable mode."""
+"""Run repository-only literature evaluation after installing the project dependencies."""
 
-from airesearcher.stages.idea.evaluation import main
+import sys
+from pathlib import Path
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.literature.evaluation import main
+
     main()

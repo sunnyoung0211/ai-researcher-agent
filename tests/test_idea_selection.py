@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from airesearcher.core.models.common import ProjectState as S
 from airesearcher.engine.stage import Error, Stop
-from airesearcher.stages.idea.demo import simulated_selection
 from airesearcher.stages.idea.evidence import load_json
 from airesearcher.stages.idea.models import ScoreOutput
 from airesearcher.stages.idea.selection import (
@@ -19,6 +18,7 @@ from airesearcher.stages.idea.selection import (
     task_config,
 )
 from airesearcher.stages.idea.storage import save_json
+from scripts.literature.demo import simulated_selection
 
 from .helpers import drive
 from .test_idea_merge import seed
@@ -104,10 +104,10 @@ def test_invalid_metrics_allow_one_repair_only(air_home):
     engine.llm.backend.script["idea/refine"] = [invalid]
     engine.llm.backend._fixed_prompts.add("idea/refine")
     state = engine.ck.scratch["idea"]
-    assert isinstance(refine_step(ctx, state), Error)
+    assert isinstance(refine_step(ctx, state), Stop)
     assert state["phase"] == "refine"
     assert sum(req.prompt_id == "idea/refine" for req in engine.llm.backend.calls) == 2
-    assert isinstance(refine_step(ctx, state), Error)
+    assert isinstance(refine_step(ctx, state), Stop)
     assert sum(req.prompt_id == "idea/refine" for req in engine.llm.backend.calls) == 2
 
 
@@ -160,7 +160,7 @@ def test_unknown_scoring_evidence_is_rejected(air_home):
     refine_step(ctx, state)
     engine.llm.backend.script["idea/score"] = [scores(["invented-card#0"])]
     engine.llm.backend._fixed_prompts.add("idea/score")
-    assert isinstance(score_step(ctx, state), Error)
+    assert isinstance(score_step(ctx, state), Stop)
     assert not ctx.archive.latest("idea/scores.json")
 
 
@@ -188,7 +188,7 @@ def test_gap_table_rejects_cross_paper_evidence(air_home):
             for pid in ("s2:p0", "s2:p1")]
     engine.llm.backend.script["idea/gap_table"] = [{"rows": rows}]
     engine.llm.backend._fixed_prompts.add("idea/gap_table")
-    assert isinstance(gap_table_step(ctx, state), Error)
+    assert isinstance(gap_table_step(ctx, state), Stop)
     assert not ctx.archive.latest("idea/gap_table.md")
 
 
@@ -237,8 +237,8 @@ def test_context_and_circular_scores_are_not_literature_evidence(air_home):
 
 def test_failed_score_cache_can_be_revalidated_without_another_model_call(air_home):
     from airesearcher.core.fsutil import sha256_bytes
-    from airesearcher.stages.idea.recovery import recover_cached_score
     from airesearcher.stages.idea.selection import round_path, trace
+    from scripts.literature.recovery import recover_cached_score
 
     project, engine, ctx, cards = ready(air_home)
     state = engine.ck.scratch["idea"]

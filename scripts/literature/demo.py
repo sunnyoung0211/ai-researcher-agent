@@ -14,10 +14,9 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import describe
 from airesearcher.llm.gateway import LLMGateway
+from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.testing.fake_literature import FakeLiterature
 from airesearcher.testing.fake_llm import FakeLLM
-
-from .stage import IdeaStage
 
 
 def demo_responses() -> dict:

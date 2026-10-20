@@ -14,7 +14,7 @@
 免费生成待标注模板（输出路径必须不存在）：
 
 ```powershell
-python -m airesearcher.stages.idea.evaluation --workspace "<run-directory>" --init-gold --output "<outside-repo>/human_annotations.json"
+python -m scripts.literature.evaluation --workspace "<run-directory>" --init-gold --output "<outside-repo>/human_annotations.json"
 ```
 
 免费计算指标：

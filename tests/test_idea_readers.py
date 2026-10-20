@@ -12,12 +12,12 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.llm.gateway import LLMGateway
-from airesearcher.stages.idea.demo import DemoLLM, demo_gateway
 from airesearcher.stages.idea.quotes import QuoteVerifier
 from airesearcher.stages.idea.readers import FEASIBILITY_FIELDS, METHOD_FIELDS, card_id
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers
 from airesearcher.testing.fake_literature import FakeLiterature
+from scripts.literature.demo import DemoLLM, demo_gateway
 
 from .helpers import drive
 

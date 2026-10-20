@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 
 from airesearcher.core.project import Project
-
-from .storage import save_json
+from airesearcher.stages.idea.storage import save_json
 
 EXACT = {
     "idea/brief.json", "idea/queries.json", "idea/query_repair.json", "idea/literature.jsonl",
@@ -66,10 +65,9 @@ def recover_cached_score(ctx, state):
     from airesearcher.core.fsutil import sha256_bytes
     from airesearcher.llm.cache import LLMCache
     from airesearcher.llm.gateway import UNTRUSTED_NOTICE, extract_json
-
-    from .evidence import load_json, material
-    from .models import ScoreOutput
-    from .selection import normalize_scores, round_path, selection_context
+    from airesearcher.stages.idea.evidence import load_json, material
+    from airesearcher.stages.idea.models import ScoreOutput
+    from airesearcher.stages.idea.selection import normalize_scores, round_path, selection_context
 
     context = {**selection_context(ctx), "idea": load_json(ctx, "idea/selected.json")}
     attempts_path = round_path(state, "score_attempts")

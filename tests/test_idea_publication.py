@@ -6,12 +6,12 @@ from airesearcher.core.models.idea import parse_selected_md
 from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
-from airesearcher.stages.idea.demo import demo_gateway, simulated_selection
 from airesearcher.stages.idea.evidence import load_json
 from airesearcher.stages.idea.publication import submit_step, write_step
 from airesearcher.stages.idea.selection import selection_context
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.testing.fake_literature import FakeLiterature
+from scripts.literature.demo import demo_gateway, simulated_selection
 
 from .helpers import approve_pending, drive
 
@@ -158,7 +158,7 @@ def test_selected_document_lineage_contains_all_validated_inputs(air_home):
 
 
 def test_cached_recovery_reuses_paid_reading_without_calling_backend(air_home):
-    from airesearcher.stages.idea.recovery import finish_replay, seed_cached_run
+    from scripts.literature.recovery import finish_replay, seed_cached_run
     original, _, source = pending(air_home)
     target = Project.create(goal=original.config.goal, task=original.config.task,
                             root=air_home / "recovered", register=False,

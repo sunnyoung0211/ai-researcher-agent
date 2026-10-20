@@ -5,7 +5,7 @@ import copy
 import pytest
 
 from airesearcher.core.models.common import ProjectState as S
-from airesearcher.stages.idea.evaluation import annotation_id, annotation_template, evaluate
+from scripts.literature.evaluation import annotation_id, annotation_template, evaluate
 
 from .helpers import drive
 from .test_idea_readers import QUOTE, cards, seed

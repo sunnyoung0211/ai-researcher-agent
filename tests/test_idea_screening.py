@@ -10,11 +10,11 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.services.literature import load_papers
-from airesearcher.stages.idea.demo import demo_gateway, demo_responses
 from airesearcher.stages.idea.models import PaperRelevance
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers, save_json
 from airesearcher.testing.fake_literature import FakeLiterature
+from scripts.literature.demo import demo_gateway, demo_responses
 
 from .helpers import drive
 

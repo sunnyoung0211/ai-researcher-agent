@@ -12,10 +12,10 @@ from pathlib import Path
 from airesearcher.core.errors import AirError
 from airesearcher.core.models.literature import ReadingCard
 from airesearcher.core.project import Project
+from airesearcher.stages.idea.quotes import QuoteVerifier
+from airesearcher.stages.idea.readers import FEASIBILITY_FIELDS, METHOD_FIELDS, ROLE_FIELDS
 
 from .quality import archived_json
-from .quotes import QuoteVerifier
-from .readers import FEASIBILITY_FIELDS, METHOD_FIELDS, ROLE_FIELDS
 
 FIELDS = set(METHOD_FIELDS + FEASIBILITY_FIELDS)
 SYNTHESIS = {"idea/gap_analyst", "idea/coordinator_merge", "idea/adjudicate_conflict"}

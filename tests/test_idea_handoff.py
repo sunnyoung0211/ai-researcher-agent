@@ -11,9 +11,9 @@ from airesearcher.core.models.common import ProjectState as S
 from airesearcher.core.models.plan import parse_plan_md
 from airesearcher.server.app import create_app
 from airesearcher.services.literature import bibtex_for, verify_citation
-from airesearcher.stages.idea.demo import demo_gateway
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers
+from scripts.literature.demo import demo_gateway
 
 from .helpers import drive
 from .test_idea_publication import pending

@@ -7,9 +7,9 @@ import pytest
 from airesearcher.core.models.common import ProjectState as S
 from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
-from airesearcher.stages.idea.demo import DemoLLM
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.testing.fake_literature import FakeLiterature
+from scripts.literature.demo import DemoLLM
 
 from .helpers import drive
 
@@ -73,7 +73,8 @@ def test_five_injected_source_instructions_remain_untrusted_through_submission(a
 def test_hostile_model_output_cannot_publish_a_changed_study(air_home, attack):
     project, engine, _ = make(air_home, attack)
     config = (project.root / "project.yaml").read_bytes()
-    drive(engine, S.Failed)
+    drive(engine, S.Paused)
+    assert project.questions.pending() is not None
     assert not project.archive.latest("idea/selected.md")
     assert not project.approvals.pending()
     assert (project.root / "project.yaml").read_bytes() == config

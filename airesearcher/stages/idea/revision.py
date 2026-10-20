@@ -10,6 +10,8 @@ from airesearcher.core.models.idea import parse_selected_md
 from airesearcher.engine.stage import Continue, Error, Stop
 from airesearcher.services.literature import load_papers
 
+from .attempts import SelectionNeedsDecision
+from .dedup import PaperIdentity
 from .evidence import load_json
 from .goal_scope import validate_goal_scope
 from .models import QueryPlan, RevisionOutput
@@ -60,9 +62,15 @@ def revise_step(ctx, state):
     try:
         task = task_config(ctx)
         request = load_json(ctx, state["revision_input"])
+
+        def validate(output):
+            output.new_queries = list(dict.fromkeys(q.strip() for q in output.new_queries if q.strip()))
+            if output.needs_more_literature and not output.new_queries:
+                raise ValueError("A literature revision requires at least one nonblank new query")
+            normalize_idea(ctx, output.idea, task, output.task_fit)
+
         receipt = request_output(
-            ctx, state, "revise", RevisionOutput,
-            lambda output: normalize_idea(ctx, output.idea, task, output.task_fit),
+            ctx, state, "revise", RevisionOutput, validate,
             {**selection_context(ctx), "revision_request": request},
         )
         output = RevisionOutput.model_validate(receipt["output"])
@@ -79,6 +87,8 @@ def revise_step(ctx, state):
                          revision_queries=output.new_queries)
         else:
             state["phase"] = "score"
+    except SelectionNeedsDecision as exc:
+        return exc.stop
     except RuntimeError as exc:
         return Stop(str(exc))
     except (ValueError, KeyError, OSError) as exc:
@@ -95,13 +105,20 @@ def scoped_context(ctx, state):
 def prepare_incremental(ctx, scoped, state):
     if not scoped.archive.latest("idea/queries.json"):
         queries = list(dict.fromkeys(q.strip() for q in state["revision_queries"] if q.strip()))
+        if not queries:
+            raise ValueError("Incremental retrieval requires at least one nonblank query")
         groups = [{"question": f"Feedback-driven retrieval {i + 1}", "purpose": "Resolve a revision question",
                    "queries": [queries[i % len(queries)]]} for i in range(max(3, len(queries)))]
         plan = QueryPlan.model_validate({"subquestions": groups})
         save_json(scoped, "idea/queries.json", plan.model_dump(mode="json"))
         save_json(scoped, "idea/brief.json", load_json(ctx, "idea/brief.json"))
-    existing = load_papers(ctx.root)
-    state["revision_literature"]["exclude_papers"] = [p.model_dump(mode="json") for p in existing.values()]
+    child = state["revision_literature"]
+    if child.get("exclude_identity_version") != 1:
+        records = child.get("exclude_papers")
+        if records is None:
+            records = [paper.model_dump(mode="json") for paper in load_papers(ctx.root).values()]
+        child["exclude_papers"] = [PaperIdentity.model_validate(record).model_dump(mode="json") for record in records]
+        child["exclude_identity_version"] = 1
 
 
 def combine_reading(ctx, scoped):

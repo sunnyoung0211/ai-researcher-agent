@@ -58,7 +58,7 @@ def test_page_lists_match_only_listed_pages_and_never_bridge_gaps():
 def test_cached_quality_audit_is_read_only_and_never_calls_model(air_home):
     import json
 
-    from airesearcher.stages.idea.quality import audit_cached_reading
+    from scripts.literature.quality import audit_cached_reading
 
     from .test_idea_publication import pending
 

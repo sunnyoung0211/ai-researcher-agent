@@ -3,7 +3,18 @@
 import re
 import unicodedata
 
+from pydantic import BaseModel
+
 from airesearcher.core.models.literature import PaperRecord
+
+
+class PaperIdentity(BaseModel):
+    """Minimal checkpoint fields used for identifier and title/year deduplication."""
+
+    paper_id: str
+    ids: dict[str, str]
+    title: str
+    year: int | None
 
 
 def _id(key: str, value: str) -> str:
@@ -19,7 +30,7 @@ def _title(text: str) -> str:
     return " ".join(re.findall(r"\w+", unicodedata.normalize("NFKC", text).lower()))
 
 
-def same_paper(a: PaperRecord, b: PaperRecord) -> bool:
+def same_paper(a: PaperRecord | PaperIdentity, b: PaperRecord | PaperIdentity) -> bool:
     if a.paper_id == b.paper_id:
         return True
     if any(k in a.ids and k in b.ids and _id(k, a.ids[k]) == _id(k, b.ids[k])

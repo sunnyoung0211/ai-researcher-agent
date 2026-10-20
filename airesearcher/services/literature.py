@@ -1,4 +1,4 @@
-"""Read-only citation lookup and optional permission-checked URL accessibility checks."""
+"""Read citation artifacts; online checks audit network permissions through the core guard."""
 
 from __future__ import annotations
 
@@ -8,9 +8,12 @@ from pathlib import Path
 import httpx
 import yaml
 
+from airesearcher.core.errors import PermissionDenied
+from airesearcher.core.events import Events
 from airesearcher.core.fsutil import now, read_jsonl
 from airesearcher.core.models.literature import CitationStatus, PaperRecord
-from airesearcher.core.models.project import Permissions
+from airesearcher.core.models.project import Permissions as PermissionConfig
+from airesearcher.core.permissions import Permissions
 
 LITERATURE = "idea/literature.jsonl"
 
@@ -42,7 +45,7 @@ def verify_citation(root: Path, paper_id: str, online: bool = False) -> Citation
         status = "verified"
     if online and status == "verified":
         reachable, note = _check_url(Path(root), rec.url)
-        if not reachable:
+        if reachable is False:
             status = "source_unreachable"
     return CitationStatus(
         paper_id=paper_id, status=status, citation_key=rec.citation_key, bibtex=rec.bibtex, title=rec.title,
@@ -50,14 +53,16 @@ def verify_citation(root: Path, paper_id: str, online: bool = False) -> Citation
     )
 
 
-def _check_url(root: Path, url: str) -> tuple[bool, str]:
-    """Check headers without reading bodies or changing project files or permissions."""
+def _check_url(root: Path, url: str) -> tuple[bool | None, str]:
+    """Return None when unchecked; audit permissions without changing research artifacts."""
     try:
         config = root / "project.yaml"
         data = yaml.safe_load(config.read_text(encoding="utf-8")) if config.exists() else {}
-        permissions = Permissions.model_validate((data or {}).get("permissions", {}))
+        permissions = PermissionConfig.model_validate((data or {}).get("permissions", {}))
     except (OSError, ValueError, AttributeError, yaml.YAMLError):
-        return False, "Cannot read network permissions; no request was sent."
+        return None, "Online check not performed: cannot read network permissions; no request was sent."
+    guard = Permissions(root, Events(root), lambda: permissions)
+    checked_any = False
     deadline = time.monotonic() + 20
     redirects = 0
     method = "HEAD"
@@ -67,14 +72,19 @@ def _check_url(root: Path, url: str) -> tuple[bool, str]:
             while True:
                 host = target.host.lower()
                 if target.scheme not in {"https", "http"} or not host or target.userinfo:
-                    return False, "Only HTTP(S) URLs without embedded credentials can be checked."
-                # Apply the same domain/subdomain rule as the core network permission guard.
-                if not any(host == d or host.endswith("." + d) for d in permissions.network.allow):
-                    return False, "URL host is outside permissions.network.allow; no request sent to this host."
+                    return None, "Online check not completed: only HTTP(S) URLs without credentials can be checked."
+                try:
+                    guard.guard("network", host, actor="service:literature")
+                except PermissionDenied:
+                    scope = "not completed" if checked_any else "not performed"
+                    return None, f"Online check {scope}: host denied by network permissions; no request to this host."
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    if not checked_any:
+                        return None, "Online check not performed: time budget expired before a request was sent."
                     return False, "URL accessibility check exceeded its time budget."
                 timeout = httpx.Timeout(remaining, connect=min(5, remaining))
+                checked_any = True
                 with client.stream(method, target, timeout=timeout) as response:
                     if response.status_code in {301, 302, 303, 307, 308}:
                         location = response.headers.get("location")
@@ -89,7 +99,11 @@ def _check_url(root: Path, url: str) -> tuple[bool, str]:
                     if response.is_success:
                         return True, f"URL accessible (HTTP {response.status_code}); content claims are not verified."
                     return False, f"Source returned HTTP {response.status_code}; accessibility could not be confirmed."
-    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+    except httpx.InvalidURL:
+        return None, "Online check not completed: the URL is invalid."
+    except (httpx.HTTPError, ValueError) as exc:
+        if not checked_any:
+            return None, f"Online check not performed ({type(exc).__name__}); no request was sent."
         return False, f"URL accessibility check failed ({type(exc).__name__})."
 
 

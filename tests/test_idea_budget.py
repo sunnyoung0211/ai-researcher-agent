@@ -5,7 +5,7 @@ import json
 import pytest
 
 from airesearcher.llm.gateway import LLMRequest, RawCompletion
-from airesearcher.stages.idea.budgeted import BudgetedBackend, SpendingLimit
+from scripts.literature.budgeted import BudgetedBackend, SpendingLimit
 
 
 class Backend:

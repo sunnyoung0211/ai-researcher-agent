@@ -11,11 +11,11 @@ from airesearcher.core.project import Project
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import Error
 from airesearcher.stages.idea.conflicts import indexed_items, review_snippets, rule_conflicts
-from airesearcher.stages.idea.demo import DemoLLM, demo_gateway
 from airesearcher.stages.idea.stage import IdeaStage
 from airesearcher.stages.idea.storage import append_papers, save_json
 from airesearcher.testing.fake_literature import FakeLiterature
 from airesearcher.testing.fake_llm import fake_gateway
+from scripts.literature.demo import DemoLLM, demo_gateway
 
 from .helpers import drive
 
