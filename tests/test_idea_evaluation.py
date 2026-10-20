@@ -44,14 +44,18 @@ def test_missing_gold_cannot_become_a_quality_score(air_home):
     assert all(not {"workspace_id", "ref", "reading_mode", "role"} & j.keys() for j in template["judgments"])
 
 
-def test_complete_labels_enable_metrics_and_partial_labels_remain_explicit(air_home):
+@pytest.mark.parametrize("covered_item", [False, True])
+def test_complete_labels_enable_metrics_and_partial_labels_remain_explicit(air_home, covered_item):
     project, _ = run(air_home)
     [data] = evaluate([project.root])["runs"]
     gold = labeled(data)
     [complete] = evaluate([project.root], gold)["runs"]
     assert complete["semantic_accuracy"] == 1 and complete["key_information_recall"] == 1
     partial = copy.deepcopy(gold)
-    partial["judgments"][-1].update(verdict="pending", reviewer="")
+    pending = next(judgment for judgment in partial["judgments"]
+                   if bool(judgment["covered_fact_ids"]) == covered_item)
+    # Pending labels discard prior fact coverage, regardless of blinded item ordering.
+    pending.update(verdict="pending", reviewer="", covered_fact_ids=[])
     [data] = evaluate([project.root], partial)["runs"]
     assert data["semantic_accuracy"] is None and data["key_information_recall"] is None
     assert data["accuracy_on_reviewed_items"] == 1 and data["annotation_coverage"] == 13 / 14
