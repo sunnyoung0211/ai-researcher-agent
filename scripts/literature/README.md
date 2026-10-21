@@ -12,19 +12,34 @@ They are not imported by the production idea stage or installed as part of the
 - `budgeted.py`: conservative reservations for that paid validation runner only;
   it does not replace or reset the project's core budget.
 
-Free example from the repository root:
+Free example from the repository root (Windows PowerShell):
 
 ```powershell
 $demoRoot = Join-Path $env:USERPROFILE ("air\d-" + (Get-Date -Format "yyyyMMddHHmmss"))
 python -m scripts.literature.demo --workspace "$demoRoot" --read-papers 2
 ```
 
+macOS / Linux (bash):
+
+```bash
+demo_root="$HOME/air/d-$(date +%Y%m%d%H%M%S)"
+python -m scripts.literature.demo --workspace "$demo_root" --read-papers 2
+```
+
 The resulting draft is simulated and waits for approval. It is not a real-model
 quality result or evidence that LoRA training was performed.
 
-Offline entry points:
+Offline entry points (Windows PowerShell):
 
 ```powershell
+python -m scripts.literature.evaluation --help
+python -m scripts.literature.quality --help
+python eval/metrics/literature_compare.py --help
+```
+
+macOS / Linux (bash):
+
+```bash
 python -m scripts.literature.evaluation --help
 python -m scripts.literature.quality --help
 python eval/metrics/literature_compare.py --help

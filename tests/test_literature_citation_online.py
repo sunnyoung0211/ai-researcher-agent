@@ -2,7 +2,6 @@
 
 import httpx
 import pytest
-import yaml
 
 from airesearcher.services import literature
 from airesearcher.stages.fakes.idea import fake_papers
@@ -27,7 +26,7 @@ def citation(project, monkeypatch):
 
 def check(citation):
     project, paper, _, _, _ = citation
-    return literature.verify_citation(project.root, paper.paper_id, online=True)
+    return literature.verify_citation(project.root, paper.paper_id, online=True, guard=project.permissions.guard)
 
 
 def test_default_offline_and_registry_precedence_never_request(citation):
@@ -105,15 +104,8 @@ def test_timeout_and_permission_failure_do_not_leak_urls(citation):
     install(timeout)
     result = check(citation)
     assert result.status == 'source_unreachable' and 'sensitive' not in result.note
-    cfg = project.root / 'project.yaml'
-    data = yaml.safe_load(cfg.read_text(encoding='utf-8'))
-    data['permissions']['network']['allow'] = []
-    cfg.write_text(yaml.safe_dump(data), encoding='utf-8')
+    project.config.permissions.network.allow = []
     requests.clear()
-    result = check(citation)
-    assert result.status == 'verified' and 'not performed' in result.note
-    assert not requests
-    cfg.write_text('permissions: [invalid', encoding='utf-8')
     result = check(citation)
     assert result.status == 'verified' and 'not performed' in result.note
     assert not requests
@@ -141,3 +133,43 @@ def test_deadline_before_first_request_is_unchecked(citation, monkeypatch):
     result = check(citation)
     assert result.status == "verified" and "not performed" in result.note
     assert not requests
+
+
+def test_online_checks_share_event_sequence_listeners_and_grant_cache(citation):
+    project, _, _, requests, install = citation
+    received = []
+    project.events.subscribe(received.append)
+    before = project.events.append("test.before", "Before citation checks", actor="test")
+    install(lambda r: httpx.Response(200))
+    assert check(citation).status == "verified"
+    assert check(citation).status == "verified"
+    after = project.events.append("test.after", "After citation checks", actor="test")
+
+    events = project.events.all()
+    seqs = [event.seq for event in events]
+    assert seqs == sorted(set(seqs))
+    delta = project.events.query(after_seq=before.seq)
+    assert [event.type for event in delta] == ["permission.granted", "test.after"]
+    assert [event.seq for event in delta] == [before.seq + 1, after.seq]
+    assert [event.model_dump() for event in received] == [
+        event.model_dump() for event in events if event.seq >= before.seq
+    ]
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_online_without_project_guard_stays_offline_and_writes_nothing(citation, monkeypatch, explicit_none):
+    project, paper, _, requests, _ = citation
+    before = {str(p.relative_to(project.root)): p.read_bytes()
+              for p in project.root.rglob("*") if p.is_file()}
+    def unexpected_client(**kwargs):
+        pytest.fail("An online check without a project guard must not create an HTTP client")
+    monkeypatch.setattr(literature.httpx, "Client", unexpected_client)
+    kwargs = {"guard": None} if explicit_none else {}
+    result = literature.verify_citation(project.root, paper.paper_id, online=True, **kwargs)
+    assert result.status == "verified"
+    assert "not performed" in result.note and "no project permission guard" in result.note
+    assert not requests
+    after = {str(p.relative_to(project.root)): p.read_bytes()
+             for p in project.root.rglob("*") if p.is_file()}
+    assert after == before

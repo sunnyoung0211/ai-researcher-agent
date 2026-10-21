@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
-import yaml
 
 from airesearcher.core.errors import PermissionDenied
-from airesearcher.core.events import Events
 from airesearcher.core.fsutil import now, read_jsonl
 from airesearcher.core.models.literature import CitationStatus, PaperRecord
-from airesearcher.core.models.project import Permissions as PermissionConfig
-from airesearcher.core.permissions import Permissions
 
 LITERATURE = "idea/literature.jsonl"
 
@@ -30,7 +27,10 @@ def load_papers(root: Path) -> dict[str, PaperRecord]:
     return out
 
 
-def verify_citation(root: Path, paper_id: str, online: bool = False) -> CitationStatus:
+def verify_citation(
+    root: Path, paper_id: str, online: bool = False, *, guard: Callable[..., None] | None = None,
+) -> CitationStatus:
+    """Use the owning project's permission guard for online checks; otherwise remain offline."""
     papers = load_papers(root)
     rec = papers.get(paper_id)
     if rec is None:
@@ -44,7 +44,7 @@ def verify_citation(root: Path, paper_id: str, online: bool = False) -> Citation
     else:
         status = "verified"
     if online and status == "verified":
-        reachable, note = _check_url(Path(root), rec.url)
+        reachable, note = _check_url(rec.url, guard)
         if reachable is False:
             status = "source_unreachable"
     return CitationStatus(
@@ -53,15 +53,10 @@ def verify_citation(root: Path, paper_id: str, online: bool = False) -> Citation
     )
 
 
-def _check_url(root: Path, url: str) -> tuple[bool | None, str]:
-    """Return None when unchecked; audit permissions without changing research artifacts."""
-    try:
-        config = root / "project.yaml"
-        data = yaml.safe_load(config.read_text(encoding="utf-8")) if config.exists() else {}
-        permissions = PermissionConfig.model_validate((data or {}).get("permissions", {}))
-    except (OSError, ValueError, AttributeError, yaml.YAMLError):
-        return None, "Online check not performed: cannot read network permissions; no request was sent."
-    guard = Permissions(root, Events(root), lambda: permissions)
+def _check_url(url: str, guard: Callable[..., None] | None) -> tuple[bool | None, str]:
+    """Return None when unchecked; never create separate project event or permission objects."""
+    if guard is None:
+        return None, "Online check not performed: no project permission guard was provided; no request was sent."
     checked_any = False
     deadline = time.monotonic() + 20
     redirects = 0
@@ -74,7 +69,7 @@ def _check_url(root: Path, url: str) -> tuple[bool | None, str]:
                 if target.scheme not in {"https", "http"} or not host or target.userinfo:
                     return None, "Online check not completed: only HTTP(S) URLs without credentials can be checked."
                 try:
-                    guard.guard("network", host, actor="service:literature")
+                    guard("network", host, actor="service:literature")
                 except PermissionDenied:
                     scope = "not completed" if checked_any else "not performed"
                     return None, f"Online check {scope}: host denied by network permissions; no request to this host."
