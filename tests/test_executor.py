@@ -6,6 +6,7 @@ import time
 import pytest
 import yaml
 
+from airesearcher.core.errors import InvalidState
 from airesearcher.core.fsutil import now
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.plan import TaskConfig
@@ -85,3 +86,27 @@ def test_reconcile_lost_run(project):
                                                            "wrapper_pid": 999998})
     ex._write_status(st)
     assert ex.reconcile(spec.record.run_id).failure_reason == "lost"
+
+
+def test_submit_is_idempotent_during_wrapper_startup(project, monkeypatch):
+    ex = LocalExecutor(project)
+    spec = _spec(project, ex, "r-test-startup", {"method": "main", "seed": 0, "seconds": 1})
+    ex.prepare(spec)
+    queued = ex.status(spec.record.run_id)
+    original = ex.status
+    monkeypatch.setattr(ex, "status", lambda _: queued)
+    first = ex.submit(spec)
+    second = ex.submit(spec)
+    assert first.wrapper_pid == second.wrapper_pid and len(ex._children) == 1
+    monkeypatch.setattr(ex, "status", original)
+    assert _wait(ex, spec.record.run_id).state == RunState.succeeded
+
+
+def test_ambiguous_submit_intent_is_not_automatically_repeated(project):
+    ex = LocalExecutor(project)
+    spec = _spec(project, ex, "r-test-intent", {"method": "main", "seed": 0, "seconds": 1})
+    ex.prepare(spec)
+    (spec.run_dir / "launch.json").write_text('{"wrapper_pid":null}')
+    with pytest.raises(InvalidState, match="禁止自动重复提交"):
+        ex.submit(spec)
+    assert not ex._children

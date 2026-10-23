@@ -17,6 +17,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from airesearcher.core.errors import InvalidState, NotFound
 from airesearcher.core.fsutil import atomic_write_json, now, read_json, sha256_bytes
 from airesearcher.core.models.plan import TaskConfig
@@ -30,11 +32,21 @@ from airesearcher.core.models.run import (
 )
 from airesearcher.core.project import Project
 
+from .envsnap import capture
 from .executor import JobHandle, LogChunk, RunOutputs, RunSpec
 from .procs import detached_kwargs, kill_tree, pid_matches
 
 HEARTBEAT_STALE_S = 60
-ENV_WHITELIST = ("PYTHONHASHSEED", "OMP_NUM_THREADS", "AIR_DATA_DIR", "HF_HOME", "HF_HUB_OFFLINE")
+ENV_WHITELIST = (
+    "PYTHONHASHSEED",
+    "OMP_NUM_THREADS",
+    "AIR_DATA_DIR",
+    "AIR_MODEL_DIR",
+    "HF_HOME",
+    "HF_HUB_OFFLINE",
+    "TRANSFORMERS_OFFLINE",
+    "PYTHONDONTWRITEBYTECODE",
+)
 
 
 def config_text(config: dict) -> str:
@@ -63,6 +75,7 @@ class LocalExecutor:
         self.root = project.root
         self.python = python or project.config.experiment.get("python") or sys.executable
         self._children: list[subprocess.Popen] = []
+        self._captured_environment: dict | None = None
 
     # ---------- 路径与文件 ----------
     def run_dir(self, run_id: str) -> Path:
@@ -84,11 +97,22 @@ class LocalExecutor:
 
     # ---------- 生命周期 ----------
     def probe(self) -> dict[str, Any]:
-        return {"os": f"{platform.system()} {platform.release()} {platform.machine()}",
-                "python": platform.python_version(), "cpu_count": os.cpu_count(), "gpu": None}
+        return {
+            "os": f"{platform.system()} {platform.release()} {platform.machine()}",
+            "python": platform.python_version(),
+            "cpu_count": os.cpu_count(),
+            "gpu": None,
+        }
 
     def prepare(self, spec: RunSpec) -> None:
         rec = spec.record
+        from .data import CHECKSUMS, input_refs
+
+        if (self.root / CHECKSUMS).exists():
+            accepted = input_refs(self.root)
+            actual = {r.name: (r.path, r.sha256) for r in rec.inputs}
+            if any(actual.get(r.name) != (r.path, r.sha256) for r in accepted):
+                raise InvalidState("Run inputs do not match accepted project data_checksums.json")
         d = self.run_dir(rec.run_id)
         # 用相对路径：权限事件日志里不出现本机目录
         self.project.permissions.guard("write", f"runs/{rec.run_id}", actor="executor")
@@ -111,17 +135,39 @@ class LocalExecutor:
         if st.state != RunState.queued:
             raise InvalidState(f"运行 {run_id} 的状态是 {st.state.value}，不能提交")
         d = self.run_dir(run_id)
+        # 包装器启动前状态仍为 queued。原子占位，避免下一次 tick/重启重复启动同一训练。
+        launch = d / "launch.json"
+        try:
+            fd = os.open(launch, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:
+            info = read_json(launch)
+            if pid_matches(info.get("wrapper_pid"), run_id):
+                return JobHandle(run_id=run_id, wrapper_pid=info["wrapper_pid"])
+            raise InvalidState(
+                f"运行 {run_id} 已有提交记录但包装器状态不明确；请核对后处理，禁止自动重复提交"
+            ) from None
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"wrapper_pid": None, "submitted_at": now().isoformat()}, f)
         env = os.environ.copy()
         pkg_root = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = pkg_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         env["PYTHONIOENCODING"] = "utf-8"
-        with open(d / "wrapper.log", "ab") as log:
-            # 包装器脱离后台进程（新会话 / Windows 上的独立进程组），后台重启不影响它
-            p = subprocess.Popen(
-                [sys.executable, "-m", "airesearcher.runtime.wrapper", str(d)],
-                cwd=d, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
-                **detached_kwargs(),
-            )
+        try:
+            with open(d / "wrapper.log", "ab") as log:
+                # 包装器脱离后台进程（新会话 / Windows 上的独立进程组），后台重启不影响它
+                p = subprocess.Popen(
+                    [sys.executable, "-m", "airesearcher.runtime.wrapper", str(d)],
+                    cwd=d,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    **detached_kwargs(),
+                )
+        except OSError:
+            launch.unlink()  # Popen 未成功创建进程，可以安全地重新提交
+            raise
+        atomic_write_json(launch, {"wrapper_pid": p.pid, "submitted_at": now().isoformat()})
         self._children = [c for c in self._children if c.poll() is None] + [p]
         return JobHandle(run_id=run_id, wrapper_pid=p.pid)
 
@@ -137,8 +183,9 @@ class LocalExecutor:
         terminal = self.status(run_id).state in TERMINAL_RUN_STATES
         next_offset = offset + len(data)
         size = p.stat().st_size if p.exists() else 0
-        return LogChunk(text=data.decode("utf-8", errors="replace"), next_offset=next_offset,
-                        eof=terminal and next_offset >= size)
+        return LogChunk(
+            text=data.decode("utf-8", errors="replace"), next_offset=next_offset, eof=terminal and next_offset >= size
+        )
 
     def cancel(self, run_id: str) -> None:
         d = self.run_dir(run_id)
@@ -159,14 +206,18 @@ class LocalExecutor:
         lines = mpath.read_text(encoding="utf-8").splitlines() if mpath.exists() else []
         metrics = [MetricRecord.model_validate(json.loads(line)) for line in lines if line.strip()]
         if st.state in TERMINAL_RUN_STATES and self.project.archive.latest(f"runs/{run_id}") is None:
-            self.project.archive.put(f"runs/{run_id}", "run", d, producer="agent:experiment/executor",
-                                     note=f"运行结束：{st.state.value}")
+            self.project.archive.put(
+                f"runs/{run_id}", "run", d, producer="agent:experiment/executor", note=f"运行结束：{st.state.value}"
+            )
             if res is not None:
                 self.project.budget.charge("cpu_hours", res.cpu_seconds / 3600, f"run:{run_id}")
                 if res.gpu_seconds:
                     self.project.budget.charge("gpu_hours", res.gpu_seconds / 3600, f"run:{run_id}")
-        files = sorted(p.relative_to(d).as_posix() for p in (d / "outputs").rglob("*") if p.is_file()) \
-            if (d / "outputs").exists() else []
+        files = (
+            sorted(p.relative_to(d).as_posix() for p in (d / "outputs").rglob("*") if p.is_file())
+            if (d / "outputs").exists()
+            else []
+        )
         return RunOutputs(run_id=run_id, status=st, metrics=metrics, resources=res, files=files)
 
     def reconcile(self, run_id: str) -> RunStatus:
@@ -205,13 +256,41 @@ class LocalExecutor:
         env_vars = {k: os.environ[k] for k in ENV_WHITELIST if k in os.environ}
         env_vars.setdefault("PYTHONHASHSEED", "0")
         snap = {
-            "os": info["os"], "python": info["python"], "packages_lock": None,
-            "hardware": {"cpu": platform.processor() or platform.machine(), "cores": info["cpu_count"],
-                         "memory_gb": None, "gpu": None, "cuda": None},
-            "frameworks": {}, "env_vars": env_vars, "workdir": f"runs/{rec.run_id}/code",
-            "command": rec.command, "inputs": [i.model_dump() for i in rec.inputs],
-            "unknown": ["packages_lock（pip freeze 尚未实现）", "memory_gb", "gpu"],
+            "os": info["os"],
+            "python": info["python"],
+            "packages_lock": None,
+            "hardware": {
+                "cpu": platform.processor() or platform.machine(),
+                "cores": info["cpu_count"],
+                "memory_gb": psutil.virtual_memory().total / (1024**3),
+                "gpu": None,
+                "cuda": None,
+            },
+            "frameworks": {},
+            "env_vars": env_vars,
+            "workdir": f"runs/{rec.run_id}/code",
+            "command": rec.command,
+            "inputs": [i.model_dump() for i in rec.inputs],
+            "unknown": ["Package lock and GPU details are not captured for simulated runs."],
         }
-        snap["env_hash"] = sha256_bytes(json.dumps({k: snap[k] for k in ("os", "python", "frameworks")},
-                                                   sort_keys=True).encode())[:12]
+        if rec.executor == "local":
+            if self._captured_environment is None:
+                self._captured_environment = capture(self.root, self.python)
+            captured = self._captured_environment
+            snap.update(
+                python=captured["python"],
+                python_executable=captured["executable"],
+                packages_lock=captured["lock_path"],
+                packages_lock_sha256=captured["lock_sha256"],
+                frameworks=captured["frameworks"],
+            )
+            snap["hardware"]["gpu"] = captured["gpu"]
+            snap["unknown"] = ["Exact CUDA kernel utilization is not measured.", "CUDA toolkit runtime version"]
+            if captured["gpu"] is None:
+                snap["unknown"].append("GPU hardware/driver query was unavailable in this environment.")
+        snap["env_hash"] = sha256_bytes(
+            json.dumps(
+                {k: snap.get(k) for k in ("os", "python", "frameworks", "packages_lock_sha256")}, sort_keys=True
+            ).encode()
+        )[:12]
         return snap
