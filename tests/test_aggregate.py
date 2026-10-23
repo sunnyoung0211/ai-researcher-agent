@@ -37,7 +37,7 @@ def test_aggregate_exact_schema_and_numeric_recomputation(air_home):
     for name in ("C1", "all"):
         for suffix in ("json", "csv", "md"):
             assert (project.root / f"artifacts/aggregates/{name}.{suffix}").exists()
-    assert set(json.loads((project.root / "artifacts/aggregates/all.json").read_text())) == {
+    assert set(json.loads((project.root / "artifacts/aggregates/all.json").read_text(encoding="utf-8"))) == {
         "aggregate_id",
         "comparison",
         "plan_ref",
@@ -76,12 +76,13 @@ def test_preflight_checks_actual_interpreter_without_installing(air_home):
     ctx = engine.build_context()
     ctx.executor = SimpleNamespace(python=sys.executable)
     for code in ("import absent_air_test_package\n", "def broken(\n", "print(undefined_symbol)\n"):
-        (src / "run.py").write_text(code)
+        (src / "run.py").write_text(code, encoding="utf-8")
         with pytest.raises(ValueError, match="preflight failed"):
             preflight(ctx)
-    (src / "run.py").write_text("print('valid')\n")
+    (src / "run.py").write_text("print('valid')\n", encoding="utf-8")
     preflight(ctx)
-    assert json.loads((project.root / "environments/preflight.json").read_text())["python"] == sys.executable
+    result = json.loads((project.root / "environments/preflight.json").read_text(encoding="utf-8"))
+    assert result["python"] == sys.executable
 
 
 def test_environment_lock_excludes_secrets_and_is_reproducible(air_home, monkeypatch):

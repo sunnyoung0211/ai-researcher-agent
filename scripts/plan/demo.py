@@ -182,7 +182,7 @@ def main() -> None:
     if args.scenario == "fail":
         if len(gateway.backend.calls) != 3 or project.questions.pending() is None:
             raise RuntimeError(f"没有走完预期的两次模拟修订，请先处理输入问题：{engine.ck.reason}")
-    elif any(c["status"] == "fail" for c in json.loads((root / "plan/precheck.json").read_text())):
+    elif any(c["status"] == "fail" for c in json.loads((root / "plan/precheck.json").read_text(encoding="utf-8"))):
         raise RuntimeError("计划仍有 fail，不能视为演示通过")
 
 

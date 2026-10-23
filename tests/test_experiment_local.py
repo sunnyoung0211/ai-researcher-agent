@@ -90,7 +90,9 @@ def test_local_copy_never_approves_or_changes_source(air_home, tmp_path):
 def test_training_entry_preserves_numeric_learning_rate(tmp_path, json_format):
     template = Path(__file__).resolve().parents[1] / "tasks/text_cls_lowres/template"
     path = tmp_path / "config.yaml"
-    path.write_text(json.dumps({"learning_rate": 3e-5}) if json_format else "learning_rate: 0.00003\n")
+    path.write_text(
+        json.dumps({"learning_rate": 3e-5}) if json_format else "learning_rate: 0.00003\n", encoding="utf-8"
+    )
     code = ("import sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
             "from run import load_config; cfg,_=load_config(Path(sys.argv[2])); "
             "assert isinstance(cfg['learning_rate'],float); assert cfg['learning_rate']==3e-5")

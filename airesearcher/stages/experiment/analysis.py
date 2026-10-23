@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from airesearcher.core.errors import NotFound
 from airesearcher.core.fsutil import dumps, sha256_bytes
 from airesearcher.core.models.idea import parse_selected_md
+from airesearcher.runtime.task import uses_gpu
 from airesearcher.services import runs
 from airesearcher.stages.plan.precheck import inspect_inputs
 
@@ -57,14 +58,14 @@ def log_id(ctx):
     return f"logs/round_{round_number(ctx)}.md"
 
 
-def cost(tasks):
+def cost(tasks, task=None):
     return {
         "runs": len(tasks),
         "wall_hours": sum(t["est_minutes"] / 60 for t in tasks),
         "gpu_hours": sum(
             t["est_minutes"] / 60
             for t in tasks
-            if t["config"].get("device") == "cuda" and t["config"].get("method") != "tfidf_lr"
+            if uses_gpu(t["config"], task)
         ),
     }
 
@@ -73,7 +74,7 @@ def fits_budget(ctx, approved, tasks):
     if ctx.budget.check().exhausted:
         return False
     idea = parse_selected_md(ctx.archive.read_text(approved.plan.idea_ref))
-    estimate, used = cost(tasks), ctx.budget.used()
+    estimate, used = cost(tasks, approved.task), ctx.budget.used()
     for name in ("wall_hours", "gpu_hours"):
         limit = ctx.project.budget.get(name)
         bounds = [limit.hard] if limit and limit.hard is not None else []
@@ -414,7 +415,7 @@ def decide(ctx, approved, report, deterministic, aggregates):
     return {
         "decision": decision,
         "tasks": tasks,
-        "estimated_cost": cost(tasks),
+        "estimated_cost": cost(tasks, approved.task),
         "forced_stop": bool(forced),
         "progress": entry,
     }

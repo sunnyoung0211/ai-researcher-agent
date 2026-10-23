@@ -82,6 +82,8 @@ def default_value(record: RunRecord, metric: str) -> float:
 
 
 class FakeExecutor(LocalExecutor):
+    simulation = True
+
     def __init__(self, project: Project, outcomes: dict[str, OutcomeSpec] | OutcomeSpec | None = None,
                  python: str | None = None):
         super().__init__(project, python=python or project.config.experiment.get("python") or "python")

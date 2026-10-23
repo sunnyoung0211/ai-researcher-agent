@@ -115,7 +115,9 @@ class Wrapper:
             rss = max(rss, usage.ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024))
         wall = round(time.monotonic() - t0, 3)
         config = read_json(self.d / "config.yaml")  # LocalExecutor 固定写 JSON 格式
-        gpu = config.get("device") == "cuda" and config.get("method") != "tfidf_lr"
+        environment_path = self.d / "environment.json"
+        environment = read_json(environment_path) if environment_path.is_file() else {}
+        gpu = environment.get("gpu_requested", config.get("device") == "cuda")
         # 按 GPU 串行任务占用的墙钟时间记预算，不代表 CUDA kernel 活跃时间。
         atomic_write_json(self.d / "resources.json", Resources(
             wall_seconds=wall, cpu_seconds=round(cpu, 3),

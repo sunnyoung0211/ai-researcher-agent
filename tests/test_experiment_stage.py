@@ -29,6 +29,115 @@ from .helpers import approve_pending, drive
 from .test_plan_stage import seeded, start_plan
 
 
+@pytest.mark.parametrize("coder_fails", [False, True])
+def test_coder_budget_adapter_does_not_replace_shared_backend(air_home, monkeypatch, coder_fails):
+    project, engine, _ = prepared(air_home)
+    engine.tick()
+    ctx = engine.build_context()
+    approved = load_approved(ctx)
+    backend = ctx.llm.backend
+    if coder_fails:
+        def fail(request):
+            raise RuntimeError("Synthetic coder failure")
+        monkeypatch.setattr(backend, "call", fail)
+    entries = engine.ck.scratch["experiment"]["entries"]
+    if coder_fails:
+        with pytest.raises(RuntimeError, match="Synthetic coder failure"):
+            run_coder(ctx, approved, approved.plan.experiments[0], entries, lambda key: {})
+    else:
+        result = run_coder(ctx, approved, approved.plan.experiments[0], entries, lambda key: {})
+        assert result["ok"]
+    assert ctx.llm.backend is backend is engine.llm.backend
+
+
+def test_paused_expired_coder_trial_is_never_submitted_on_resume(air_home, monkeypatch):
+    from airesearcher.stages.experiment import stage
+    from scripts.plan.fixtures import fixture_idea
+
+    draft = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    draft["experiments"][0]["needs_code"] = True
+    _, engine, executor = prepared(air_home, draft=draft)
+    monkeypatch.setattr(stage, "CODER_DISPATCH_TIMEOUT_S", 0.05)
+
+    def waiting_coder(ctx, approved, spec, entries, trial, *args):
+        trial("trial-E1")
+
+    monkeypatch.setattr(stage, "run_coder", waiting_coder)
+    engine.tick()  # Set up entries.
+    engine.tick()  # Dispatch the worker; keep its queued operation on hold.
+    identity = str(engine.project.root)
+    worker = stage._JOBS[identity]
+    engine.request_action("pause")
+    with pytest.raises(TimeoutError):
+        worker.result(timeout=3)
+    assert not executor.submitted and not list_runs(engine.project.root)
+    engine.request_action("resume")
+    drive(engine, S.Paused)
+    assert engine.project.questions.pending()
+    assert not executor.submitted and not list_runs(engine.project.root)
+    assert identity not in stage._COMMITS and identity not in stage._JOBS
+
+
+@pytest.mark.parametrize("choice", ["mark_lost_retry", "end"])
+def test_uncertain_launch_requires_human_decision_and_preserves_old_attempt(air_home, monkeypatch, choice):
+    from airesearcher.core.fsutil import atomic_write_json
+    from airesearcher.runtime.local import UncertainSubmission
+
+    project, engine, executor = prepared(air_home)
+    original = executor.submit
+    blocked = []
+
+    def interrupted_submit(spec):
+        if not blocked:
+            blocked.append(spec.record.run_id)
+            atomic_write_json(spec.run_dir / "launch.json", {"wrapper_pid": None})
+            raise UncertainSubmission(spec.record.run_id)
+        return original(spec)
+
+    monkeypatch.setattr(executor, "submit", interrupted_submit)
+    drive(engine, S.Paused)
+    question = project.questions.pending()
+    assert {o.id for o in question.options} == {"mark_lost_retry", "end"}
+    assert not any(o.default for o in question.options)
+    assert not executor.submitted
+    engine.tick()
+    assert not executor.submitted  # Waiting never means consent.
+    old_id = blocked[0]
+    project.questions.answer(question.question_id, choice, request_id="launch-recovery")
+    if choice == "end":
+        engine.tick()
+        assert not executor.submitted and executor.status(old_id).state == RunState.queued
+        return
+    drive(engine, S.Analyzing)
+    assert executor.status(old_id).failure_reason == "lost"
+    assert (executor.run_dir(old_id) / "launch.json").exists()
+    assert project.archive.latest(f"runs/{old_id}")
+    assert old_id not in executor.submitted
+    assert any(v.record.retry_of == old_id for v in list_runs(project.root))
+    assert len(executor.submitted) == 12 and summary(project)["complete"]
+
+
+def test_live_wrapper_prevents_human_lost_recovery(air_home, monkeypatch):
+    from airesearcher.core.errors import InvalidState
+    from airesearcher.core.fsutil import atomic_write_json
+    from airesearcher.runtime import local
+
+    project, engine, executor = prepared(air_home)
+
+    def uncertain(spec):
+        atomic_write_json(spec.run_dir / "launch.json", {"wrapper_pid": 123})
+        raise local.UncertainSubmission(spec.record.run_id)
+
+    monkeypatch.setattr(executor, "submit", uncertain)
+    drive(engine, S.Paused)
+    [view] = list_runs(project.root)
+    monkeypatch.setattr(local, "pid_matches", lambda *args: True)
+    with pytest.raises(InvalidState, match="still alive"):
+        executor.mark_submission_lost(view.record.run_id)
+    assert executor.status(view.record.run_id).state == RunState.queued
+    assert not executor.submitted
+
+
 @pytest.fixture(autouse=True)
 def offline_only(monkeypatch):
     def forbidden(*args, **kwargs):
@@ -91,7 +200,7 @@ def test_unapproved_or_modified_attachments_cannot_run(air_home):
     ctx.state = S.Executing
     ctx.approved.pop("plan", None)
     assert isinstance(ExperimentStage().step(ctx), Stop)
-    (project.root / "plan/tasks.json").write_text("[]")
+    (project.root / "plan/tasks.json").write_text("[]", encoding="utf-8")
     drive(engine, S.Paused)
     assert not executor.submitted
 
@@ -232,9 +341,8 @@ def test_restart_does_not_duplicate_runs(air_home):
     resumed = ProjectEngine(project, executor=executor, llm=engine.llm, retry_delay=0)
     drive(resumed, S.LogPending)
     assert len(executor.submitted) == before
-    assert json.loads((project.root / "artifacts/aggregates/all.json").read_text())["script"]["path"].endswith(
-        "experiment/aggregate.py"
-    )
+    aggregate = json.loads((project.root / "artifacts/aggregates/all.json").read_text(encoding="utf-8"))
+    assert aggregate["script"]["path"].endswith("experiment/aggregate.py")
 
 
 def test_unsupported_protected_schema_stops_before_coder_or_execution(air_home, monkeypatch):
@@ -317,7 +425,7 @@ def test_api_adapter_full_flow_with_offline_transport(air_home, monkeypatch):
     engine._executor = FakeExecutor(project, outcomes=simulated_outcome)
     start_plan(engine, project)
     assert engine.ck.approved["idea"] == idea_ref
-    text = (project.root / "plan/experiment_plan.md").read_text()
+    text = (project.root / "plan/experiment_plan.md").read_text(encoding="utf-8")
     assert "# Experiment Plan\n" in text and "FakeLLM Development Validation" not in text
     assert "FakeLLM development validation" not in project.approvals.pending()[0].summary
     approve_pending(project)
@@ -330,9 +438,9 @@ def test_api_adapter_full_flow_with_offline_transport(air_home, monkeypatch):
     assert all(r.alias == "api-offline" for r in fake.calls)
     assert project.budget.used()["llm_usd"] == pytest.approx(len(fake.calls) * 0.002)
     assert check_project(project.root, owners=["实验"]).ok
-    report = (project.root / "logs/round_1.md").read_text()
+    report = (project.root / "logs/round_1.md").read_text(encoding="utf-8")
     assert "SIMULATED" in report and "LLM backend: api" in report
-    assert "offline-placeholder-never-send" not in (project.root / ".llm/calls.jsonl").read_text()
+    assert "offline-placeholder-never-send" not in (project.root / ".llm/calls.jsonl").read_text(encoding="utf-8")
     approve_pending(project)
     drive(engine, S.Writing)
 

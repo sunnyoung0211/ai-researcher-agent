@@ -49,6 +49,15 @@ ENV_WHITELIST = (
 )
 
 
+class UncertainSubmission(InvalidState):
+    """A launch marker exists but cannot establish whether submission succeeded."""
+
+    def __init__(self, run_id):
+        super().__init__(f"Submission of {run_id} is uncertain; inspect processes before explicitly retrying",
+                         {"run_id": run_id})
+        self.run_id = run_id
+
+
 def config_text(config: dict) -> str:
     """config.yaml 用 JSON 写（JSON 是合法的 YAML），这样只用标准库的实验脚本也能读。"""
     return json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -70,6 +79,8 @@ def expand_entrypoint(task: TaskConfig, run_dir: Path, python: str, trial: bool 
 
 
 class LocalExecutor:
+    simulation = False
+
     def __init__(self, project: Project, python: str | None = None):
         self.project = project
         self.root = project.root
@@ -125,7 +136,9 @@ class LocalExecutor:
         code = d / "code"
         if not (code.exists() and any(code.iterdir())):  # 代码快照：从工作区 git 的 commit 导出 src/
             self.project.workspace.export_src(rec.code_commit, code)
-        atomic_write_json(d / "environment.json", self._env_snapshot(rec))
+        environment = self._env_snapshot(rec)
+        environment["gpu_requested"] = spec.gpu
+        atomic_write_json(d / "environment.json", environment)
         self._write_status(RunStatus(run_id=rec.run_id, state=RunState.queued, host=platform.node()))
 
     def submit(self, spec: RunSpec) -> JobHandle:
@@ -140,12 +153,15 @@ class LocalExecutor:
         try:
             fd = os.open(launch, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
         except FileExistsError:
-            info = read_json(launch)
+            try:
+                info = read_json(launch)
+            except (OSError, ValueError):
+                raise UncertainSubmission(run_id) from None
+            if not isinstance(info, dict):
+                raise UncertainSubmission(run_id) from None
             if pid_matches(info.get("wrapper_pid"), run_id):
                 return JobHandle(run_id=run_id, wrapper_pid=info["wrapper_pid"])
-            raise InvalidState(
-                f"运行 {run_id} 已有提交记录但包装器状态不明确；请核对后处理，禁止自动重复提交"
-            ) from None
+            raise UncertainSubmission(run_id) from None
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"wrapper_pid": None, "submitted_at": now().isoformat()}, f)
         env = os.environ.copy()
@@ -170,6 +186,36 @@ class LocalExecutor:
         atomic_write_json(launch, {"wrapper_pid": p.pid, "submitted_at": now().isoformat()})
         self._children = [c for c in self._children if c.poll() is None] + [p]
         return JobHandle(run_id=run_id, wrapper_pid=p.pid)
+
+    def mark_submission_lost(self, run_id: str) -> RunStatus:
+        """Only after a human decision: retain the old attempt and permit a new ID."""
+        status = self.status(run_id)
+        if status.state in TERMINAL_RUN_STATES:
+            return status
+        if status.state not in (RunState.created, RunState.preparing, RunState.queued):
+            raise InvalidState("Run is no longer awaiting submission; inspect its current status")
+        try:
+            launch = read_json(self.run_dir(run_id) / "launch.json")
+        except (OSError, ValueError):
+            launch = {}
+        if not isinstance(launch, dict):
+            launch = {}
+        if any(pid_matches(pid, run_id) for pid in (status.pid, status.wrapper_pid, launch.get("wrapper_pid"))):
+            raise InvalidState("A matching process is still alive; refusing to create a duplicate")
+        # Also cover a crash between Popen and recording the wrapper PID.
+        directory = str(self.run_dir(run_id).resolve()).casefold()
+        for process in psutil.process_iter(["cmdline", "cwd"]):
+            try:
+                identity = " ".join(process.info.get("cmdline") or []) + " " + (process.info.get("cwd") or "")
+                if directory in identity.casefold() and process.status() != psutil.STATUS_ZOMBIE:
+                    raise InvalidState("A process still belongs to this run; inspect/cancel it before retrying")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        self.project.permissions.guard("write", f"runs/{run_id}", actor="executor")
+        status = status.model_copy(update={"state": RunState.failed, "failure_reason": "lost", "ended_at": now()})
+        self._write_status(status)
+        self.collect(run_id)
+        return status
 
     def logs(self, run_id: str, stream: str = "stdout", offset: int = 0) -> LogChunk:
         if stream not in ("stdout", "stderr"):
@@ -275,19 +321,18 @@ class LocalExecutor:
         }
         if rec.executor == "local":
             if self._captured_environment is None:
-                self._captured_environment = capture(self.root, self.python)
+                self._captured_environment = capture(self.root, self.python, guard=self.project.permissions.guard)
             captured = self._captured_environment
             snap.update(
-                python=captured["python"],
+                python=captured["python"] or snap["python"],
                 python_executable=captured["executable"],
                 packages_lock=captured["lock_path"],
                 packages_lock_sha256=captured["lock_sha256"],
                 frameworks=captured["frameworks"],
             )
             snap["hardware"]["gpu"] = captured["gpu"]
-            snap["unknown"] = ["Exact CUDA kernel utilization is not measured.", "CUDA toolkit runtime version"]
-            if captured["gpu"] is None:
-                snap["unknown"].append("GPU hardware/driver query was unavailable in this environment.")
+            snap["unknown"] = [*captured["unknown"], "Exact CUDA kernel utilization is not measured.",
+                               "CUDA toolkit runtime version"]
         snap["env_hash"] = sha256_bytes(
             json.dumps(
                 {k: snap.get(k) for k in ("os", "python", "frameworks", "packages_lock_sha256")}, sort_keys=True

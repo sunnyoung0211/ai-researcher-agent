@@ -83,6 +83,8 @@ air runs "$PID"
 
 如果只想验证本模块，到写作交接即可。demo/local 脚本固定使用 FakeLLM；真实 API 流程使用这里的主干引擎。失败问题用 `air question "$PID"` 查看，再按实际选项回答；需要人工处理的错误不会靠反复 `resume` 自动绕过。
 
+若提示启动状态不确定，先检查对应进程与日志，再选择“标记 lost 并用新编号重试”或“结束”；旧运行记录会保留。缺少 pip / `nvidia-smi` 只会在环境快照的 `unknown` 中说明，不阻止运行。切换任务时，方法别名、GPU 需求和试运行缩减参数写在该任务的 `task.yaml`（见详细设计 §3.2）。
+
 ## 5. 查看结果
 
 正式结果默认在 `$AIR_HOME/projects/$PID/`：`plan/` 看计划，`runs/` 看每次实验，`artifacts/aggregates/` 看统计表，`logs/round_*.md` 看 Agent 分析与决定，`environments/` 看环境与复现说明。研究产物为英文；论文同学通过 `airesearcher.services.runs` 读取。

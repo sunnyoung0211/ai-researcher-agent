@@ -15,7 +15,7 @@ def test_protected_file_change_is_rejected_and_reverted(air_home):
     approved = load_approved(ctx)
     before = snapshot(ctx.root)
     target = ctx.root / "src/air_report.py"
-    target.write_text("# attempted evaluator edit\n")
+    target.write_text("# attempted evaluator edit\n", encoding="utf-8")
     report = CoderReport(
         ok=True, changed_files=["src/air_report.py"], summary="test", trial_run_id=None, needs_plan_change=False
     )
@@ -36,7 +36,7 @@ def test_changed_semantic_config_is_rejected(air_home):
     key = "E1-seed=0"
     entry = entries[key]
     path = ctx.root / "configs" / entry["experiment_id"] / (key + ".yaml")
-    path.write_text(json.dumps({**entry["config"], "method": "main"}))
+    path.write_text(json.dumps({**entry["config"], "method": "main"}), encoding="utf-8")
     report = CoderReport(ok=True, changed_files=[], summary="test", trial_run_id=None, needs_plan_change=False)
     assert any("semantics" in e for e in semantic_guard(ctx, approved.task, entries, before, report))
 
@@ -75,7 +75,7 @@ def test_scientific_notation_preserves_numeric_semantics(air_home):
     entries = ctx.scratch["experiment"]["entries"]
     entry = entries["E1-seed=0"]
     entry["config"]["learning_rate"] = 3e-5
-    (ctx.root / "configs/E1/E1-seed=0.yaml").write_text(config_text(entry["config"]))
+    (ctx.root / "configs/E1/E1-seed=0.yaml").write_text(config_text(entry["config"]), encoding="utf-8")
     approved.task.semantic_keys.append("learning_rate")
     report = CoderReport(ok=True, changed_files=[], summary="unchanged", trial_run_id=None, needs_plan_change=False)
     assert semantic_guard(ctx, approved.task, entries, snapshot(ctx.root), report) == []

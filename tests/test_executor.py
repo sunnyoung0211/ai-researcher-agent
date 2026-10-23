@@ -6,14 +6,13 @@ import time
 import pytest
 import yaml
 
-from airesearcher.core.errors import InvalidState
 from airesearcher.core.fsutil import now
 from airesearcher.core.models.common import VersionRef
 from airesearcher.core.models.plan import TaskConfig
 from airesearcher.core.models.run import RunRecord, RunState
 from airesearcher.core.workspace import resolve_task_dir
 from airesearcher.runtime.executor import RunSpec
-from airesearcher.runtime.local import LocalExecutor, config_sha256, expand_entrypoint
+from airesearcher.runtime.local import LocalExecutor, UncertainSubmission, config_sha256, expand_entrypoint
 
 
 def _spec(project, ex, run_id, config, timeout=30):
@@ -106,7 +105,7 @@ def test_ambiguous_submit_intent_is_not_automatically_repeated(project):
     ex = LocalExecutor(project)
     spec = _spec(project, ex, "r-test-intent", {"method": "main", "seed": 0, "seconds": 1})
     ex.prepare(spec)
-    (spec.run_dir / "launch.json").write_text('{"wrapper_pid":null}')
-    with pytest.raises(InvalidState, match="禁止自动重复提交"):
+    (spec.run_dir / "launch.json").write_text('{"wrapper_pid":null}', encoding="utf-8")
+    with pytest.raises(UncertainSubmission, match="uncertain"):
         ex.submit(spec)
     assert not ex._children

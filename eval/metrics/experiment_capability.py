@@ -66,7 +66,7 @@ def main():
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--annotations", type=Path)
     args = parser.parse_args()
-    annotations = json.loads(args.annotations.read_text()) if args.annotations else None
+    annotations = json.loads(args.annotations.read_text(encoding="utf-8")) if args.annotations else None
     print(json.dumps(evaluate(args.workspace, annotations), indent=2))
 
 

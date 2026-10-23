@@ -266,7 +266,7 @@ def run_prechecks(
     )
     budget_errors, budget_warnings = [], []
     try:
-        plan.budget_estimate = estimate_budget(plan, tasks)
+        plan.budget_estimate = estimate_budget(plan, tasks, task)
         if plan.stopping_conditions.max_rounds > project.limits.max_rounds:
             budget_errors.append("Plan rounds exceed project limits.max_rounds")
         for name in ("wall_hours", "gpu_hours"):

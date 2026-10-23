@@ -10,10 +10,9 @@ from airesearcher.core.models.idea import parse_selected_md
 from airesearcher.core.models.plan import ExperimentPlan, PrecheckItem, parse_plan_md
 from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageContext, StepResult, Stop, Wait
-from airesearcher.llm.gateway import LiteLLMBackend, LLMOutputError
+from airesearcher.llm.gateway import LLMOutputError
 from airesearcher.llm.models import MissingAPIKey, UnknownModel
 from airesearcher.runtime.data import ensure_data
-from airesearcher.testing.fake_llm import FakeLLM
 
 from .expand import PlanDraft, expand_tasks, load_task, make_plan
 from .precheck import inspect_inputs, item, run_prechecks, structural_problems
@@ -31,13 +30,14 @@ class PlanStage:
 
     def step(self, ctx: StageContext) -> StepResult:
         mode = ctx.project.experiment.get("llm_backend", "fake")
-        expected = {"fake": FakeLLM, "api": LiteLLMBackend}
-        if not isinstance(mode, str) or mode not in expected or not isinstance(
-            getattr(ctx.llm, "backend", None), expected[mode]
-        ):
+        backend = getattr(ctx.llm, "backend", None)
+        if mode not in ("fake", "api") or not callable(getattr(backend, "call", None)) or (
+            getattr(backend, "simulation", False) is True
+        ) != (mode == "fake"):
             return Error(
                 "计划后端与 experiment.llm_backend 不匹配：默认 fake 只接受 FakeLLM；"
-                "真实调用须显式设置 api 并使用已有 LLMGateway/LiteLLMBackend。", retryable=False
+                "真实阶段请设置 experiment.llm_backend: api；离线演示请使用 scripts.plan.demo。",
+                retryable=False,
             )
         if "idea" not in ctx.approved:
             return Stop("缺少已批准的 idea；请先完成选题审批，不能直接读取未批准草稿。")

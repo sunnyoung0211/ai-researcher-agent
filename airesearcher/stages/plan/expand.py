@@ -25,20 +25,11 @@ from airesearcher.core.models.plan import (
     TaskConfig,
 )
 from airesearcher.core.workspace import repo_root, resolve_task_dir
+from airesearcher.runtime.task import load_task_config, uses_gpu
 
 MAX_TASKS = 256
 _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
-_ALIASES = {
-    "full fine-tuning": "full_ft",
-    "full fine tuning": "full_ft",
-    "full fine-tuning (distilbert)": "full_ft",
-    "全量微调": "full_ft",
-    "lora": "lora",
-    "tf-idf + lr": "tfidf_lr",
-    "tf-idf+lr": "tfidf_lr",
-    "tfidf + lr": "tfidf_lr",
-    "tf-idf + logistic regression": "tfidf_lr",
-}
+
 
 
 class PlanDraft(BaseModel):
@@ -74,7 +65,11 @@ def canonical_method(name: str, task: TaskConfig) -> str:
     """仅使用明确列出的别名；LoRA-RITE 等未知方法绝不降级成普通 LoRA。"""
     if name in task.methods_available:
         return name
-    value = _ALIASES.get(" ".join(name.casefold().split()))
+    def normalize(value):
+        return " ".join(value.casefold().split())
+    aliases = {normalize(k): v for k, v in (task.model_extra or {}).get("method_aliases", {}).items()}
+    aliases.update({normalize(method): method for method in task.methods_available})
+    value = aliases.get(normalize(name))
     if value in task.methods_available:
         return value
     raise ValueError(f"方法 {name!r} 未被当前模板支持；可用方法：{task.methods_available}")
@@ -164,7 +159,8 @@ def expand_tasks(plan: ExperimentPlan, task: TaskConfig, schema: dict | None) ->
     return tasks
 
 
-def estimate_budget(plan: ExperimentPlan, tasks: list[PlanTask]) -> dict[str, int | float]:
+def estimate_budget(plan: ExperimentPlan, tasks: list[PlanTask], task=None) -> dict[str, int | float]:
+    task = task or load_task_config(plan.task_config)
     minutes = gpu_minutes = 0.0
     reserved = 0
     for e in plan.experiments:
@@ -176,7 +172,7 @@ def estimate_budget(plan: ExperimentPlan, tasks: list[PlanTask]) -> dict[str, in
         reserved += extra
         cost = (len(group) + extra) * e.est_minutes_per_run
         minutes += cost
-        if e.method != "tfidf_lr" and any(t.config.get("device") == "cuda" for t in group):
+        if any(uses_gpu(t.config, task) for t in group):
             gpu_minutes += cost
     return {
         "runs": len(tasks),

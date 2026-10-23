@@ -356,13 +356,13 @@ def test_model_manifest_rejects_path_escape_even_when_hash_matches(tmp_path, mon
 
 def test_cross_split_duplicate_is_detected_even_with_updated_hash(tmp_path, monkeypatch):
     directory = local_data(tmp_path, monkeypatch)
-    train = [json.loads(line) for line in (directory / "train.jsonl").read_text().splitlines()]
+    train = [json.loads(line) for line in (directory / "train.jsonl").read_text(encoding="utf-8").splitlines()]
     dev_path = directory / "dev.jsonl"
-    dev = [json.loads(line) for line in dev_path.read_text().splitlines()]
+    dev = [json.loads(line) for line in dev_path.read_text(encoding="utf-8").splitlines()]
     dev[0]["text"] = "  " + train[0]["text"].upper() + "  "
     dev_path.write_text("".join(json.dumps(row) + "\n" for row in dev), encoding="utf-8")
     manifest_path = directory / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["files"]["dev.jsonl"]["sha256"] = sha256_file(dev_path)
     manifest_path.write_text(dumps(manifest), encoding="utf-8")
     _, task, _ = load_task("tasks/text_cls_lowres")
@@ -408,7 +408,7 @@ def test_text_cls_defaults_and_config_schema(tmp_path, monkeypatch, air_home, in
     assert len(tasks) == 9 and all(t["config"]["train_size"] == 4 for t in tasks)
     assert all(t["config"]["eval_split"] == "dev" and t["config"]["batch_size"] == 8 for t in tasks)
     assert plan.budget_estimate["runs"] == 9
-    accepted = json.loads((project.root / "environments/data_checksums.json").read_text())
+    accepted = json.loads((project.root / "environments/data_checksums.json").read_text(encoding="utf-8"))
     assert accepted and all(len(entry["sha256"]) == 64 for entry in accepted)
     assert not getattr(plan, "planning_inputs", None)
     assert sha256_file(schema_path) == schema_hash

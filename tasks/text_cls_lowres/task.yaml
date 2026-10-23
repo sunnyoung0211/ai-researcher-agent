@@ -24,6 +24,20 @@ data:
     files: [{path: train.jsonl}, {path: dev.jsonl}, {path: test.jsonl}]
 models: [distilbert/distilbert-base-uncased]
 methods_available: [tfidf_lr, full_ft, lora]
+method_aliases:
+  full fine-tuning: full_ft
+  full fine tuning: full_ft
+  full fine-tuning (distilbert): full_ft
+  全量微调: full_ft
+  tf-idf + lr: tfidf_lr
+  tf-idf+lr: tfidf_lr
+  tfidf + lr: tfidf_lr
+  tf-idf + logistic regression: tfidf_lr
+method_resources:
+  tfidf_lr: {gpu: false}
+  full_ft: {gpu: true}
+  lora: {gpu: true}
+trial_overrides: {train_size: 50, epochs: 1}
 semantic_keys:
   - method
   - model_name

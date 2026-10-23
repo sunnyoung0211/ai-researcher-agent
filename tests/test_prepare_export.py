@@ -20,7 +20,7 @@ def test_export_layout_and_relative_entrypoint(project):
 
 def test_prepare_rejects_input_version_missing_from_record(project, tmp_path):
     path = tmp_path / "input.txt"
-    path.write_text("fixture")
+    path.write_text("fixture", encoding="utf-8")
     from airesearcher.core.fsutil import sha256_file
 
     atomic_write_json(

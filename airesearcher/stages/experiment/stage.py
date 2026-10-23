@@ -8,6 +8,7 @@ import math
 import queue
 import re
 import shutil
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -25,14 +26,12 @@ from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.core.models.run import TERMINAL_RUN_STATES, RunLabel, RunRecord, RunState
 from airesearcher.core.workspace import repo_root, resolve_task_dir
 from airesearcher.engine.stage import Advance, Continue, Error, NeedsApproval, StageContext, Stop, Wait
-from airesearcher.llm.gateway import LiteLLMBackend
 from airesearcher.llm.models import MissingAPIKey, UnknownModel
 from airesearcher.runtime.data import ensure_data, input_refs
-from airesearcher.runtime.executor import RunSpec
-from airesearcher.runtime.local import LocalExecutor, config_sha256, config_text, expand_entrypoint
+from airesearcher.runtime.executor import Executor, RunSpec
+from airesearcher.runtime.local import LocalExecutor, UncertainSubmission, config_sha256, config_text, expand_entrypoint
+from airesearcher.runtime.task import load_task_config, trial_overrides, uses_gpu
 from airesearcher.services import runs as run_service
-from airesearcher.testing.fake_executor import FakeExecutor
-from airesearcher.testing.fake_llm import FakeLLM
 
 from .aggregate import publish_results
 from .analysis import analyze, checks, decide, fits_budget, log_id, publish_log
@@ -43,10 +42,7 @@ SETTLED = {"done", "skipped", "blocked"}
 _POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="experiment-coder")
 _JOBS = {}
 _COMMITS = {}
-
-
-def uses_gpu(config):
-    return config.get("device") == "cuda" and config.get("method") != "tfidf_lr"
+CODER_DISPATCH_TIMEOUT_S = 330
 
 
 class ExperimentStage:
@@ -54,16 +50,18 @@ class ExperimentStage:
 
     def step(self, ctx: StageContext):
         mode = ctx.project.experiment.get("llm_backend", "fake")
-        expected = {"fake": FakeLLM, "api": LiteLLMBackend}
-        if not isinstance(mode, str) or mode not in expected or not isinstance(
-            getattr(ctx.llm, "backend", None), expected[mode]
-        ):
+        backend = getattr(ctx.llm, "backend", None)
+        if mode not in ("fake", "api") or not callable(getattr(backend, "call", None)) or (
+            getattr(backend, "simulation", False) is True
+        ) != (mode == "fake"):
             return Error(
                 "执行后端与 experiment.llm_backend 不匹配：默认 fake 只接受 FakeLLM；"
-                "真实调用须显式设置 api 并使用已有 LLMGateway/LiteLLMBackend。", retryable=False
+                "真实阶段请设置 experiment.llm_backend: api；离线演示请使用 scripts.experiment.demo。",
+                retryable=False,
             )
-        local = type(ctx.executor) is LocalExecutor and ctx.project.experiment.get("allow_local_execution") is True
-        if type(ctx.executor) is not FakeExecutor and not local:
+        simulated = getattr(ctx.executor, "simulation", False) is True
+        local = not simulated and ctx.project.experiment.get("allow_local_execution") is True
+        if not isinstance(ctx.executor, Executor) or not (simulated or local):
             return Error(
                 "本地训练需要明确开启 allow_local_execution；模拟执行请使用 FakeExecutor。", retryable=False
             )
@@ -88,6 +86,8 @@ class ExperimentStage:
             if s["simulation"] != (not local):
                 raise ValueError("不能在已有运行工作区内切换真实/模拟执行器；请使用独立工作区")
             if ctx.answer and ctx.answer.question_id == s.get("asked"):
+                if s.get("uncertain_submission"):
+                    return self._answer_submission(ctx, s)
                 if not s.pop("data_question", False):
                     answer = self._answer(ctx, s)
                     if answer:
@@ -130,10 +130,10 @@ class ExperimentStage:
                 if local and ctx.project.experiment.get("stop_after_trials") is True and not entry["trial"]:
                     continue
                 active = [e for e in entries.values() if e["state"] == "running"]
-                gpu = uses_gpu(entry["config"])
-                if gpu and any(uses_gpu(e["config"]) for e in active):
+                gpu = uses_gpu(entry["config"], approved.task)
+                if gpu and any(uses_gpu(e["config"], approved.task) for e in active):
                     continue
-                if not gpu and sum(not uses_gpu(e["config"]) for e in active) >= max(
+                if not gpu and sum(not uses_gpu(e["config"], approved.task) for e in active) >= max(
                     1, ctx.project.permissions.exec.max_parallel_cpu
                 ):
                     continue
@@ -172,8 +172,42 @@ class ExperimentStage:
             return Wait(
                 "等待本地训练结果" if local else "等待 FakeExecutor 结果（未启动真实进程）", seconds=0.5 if local else 0
             )
+        except UncertainSubmission as exc:
+            return self._submission_question(ctx, s, exc.run_id)
         except (OSError, ValueError, KeyError, TypeError, InvalidState) as exc:
             return Stop(f"执行前校验或恢复失败：{exc}")
+
+    @staticmethod
+    def _submission_question(ctx, state, run_id):
+        key = next(key for key, entry in state["entries"].items() if run_id in entry["runs"])
+        state["uncertain_submission"] = {"task_key": key, "run_id": run_id}
+        text = (f"Run {run_id} has an uncertain launch record. Inspect its processes and logs before deciding. "
+                "Retry preserves this attempt as lost and uses a new run ID; no automatic resubmission is allowed.")
+        return Stop(text, question=Question(text=text, options=[
+            QuestionOption(id="mark_lost_retry", label="I checked: mark this attempt lost and retry with a new ID"),
+            QuestionOption(id="end", label="End the project"),
+        ]))
+
+    @staticmethod
+    def _answer_submission(ctx, state):
+        pending = state["uncertain_submission"]
+        if ctx.answer.choice != "mark_lost_retry":
+            return Stop("Submission recovery ended by the user")
+        try:
+            status = ctx.executor.mark_submission_lost(pending["run_id"])
+        except InvalidState as exc:
+            result = ExperimentStage._submission_question(ctx, state, pending["run_id"])
+            result.question.text += " " + str(exc)
+            return result
+        entry = state["entries"][pending["task_key"]]
+        if status.state == RunState.failed and status.failure_reason == "lost":
+            entry.update(state="failed", error_class="lost", failure_detail="Human-confirmed lost submission")
+        else:
+            entry["state"] = "running"  # Normal monitoring collects an already-finished attempt.
+        ctx.events.append("stage.decision", "User confirmed submission recovery", actor="user", data=dict(pending))
+        state.pop("uncertain_submission")
+        state.pop("asked", None)
+        return Continue("Submission recovery recorded; apply bounded lost-run handling")
 
     @staticmethod
     def _review(ctx):
@@ -329,10 +363,7 @@ class ExperimentStage:
             explore = next((name for name, meta in approved.task.splits.items() if meta.get("role") == "explore"), None)
             if explore:
                 config["eval_split"] = explore
-            if "train_size" in config:
-                config["train_size"] = min(config["train_size"], 50)
-            if "epochs" in config:
-                config["epochs"] = 1
+            config.update(trial_overrides(approved.task))
             trial_key = f"trial-{spec.id}"
             if any(t.task_key == trial_key for t in approved.tasks):
                 raise ValueError("任务键与 trial 前缀冲突")
@@ -372,7 +403,7 @@ class ExperimentStage:
             phase="code",
             code_queue=[e.id for e in approved.plan.experiments if e.needs_code],
             round=1,
-            simulation=type(ctx.executor) is FakeExecutor,
+            simulation=getattr(ctx.executor, "simulation", False) is True,
             required_metrics=[m.name for m in approved.task.metrics if m.required],
             source_hashes=source_hashes(ctx.root),
         )
@@ -447,7 +478,17 @@ class ExperimentStage:
         config = json.loads((d / "config.yaml").read_text(encoding="utf-8"))
         if config_sha256(config) != record.config_sha256:
             raise ValueError("运行配置快照被修改")
-        return RunSpec(record=record, run_dir=d, config=config, trial=record.kind == "trial", gpu=uses_gpu(config))
+        environment_path = d / "environment.json"
+        environment = json.loads(environment_path.read_text(encoding="utf-8")) if environment_path.exists() else {}
+        gpu = environment.get("gpu_requested")
+        if gpu is None:  # Compatibility with runs prepared before resource metadata was recorded.
+            gpu = uses_gpu(config, load_task_config(ctx.project.task))
+        if type(gpu) is not bool:
+            raise ValueError("Invalid archived gpu_requested flag")
+        return RunSpec(
+            record=record, run_dir=d, config=config, trial=record.kind == "trial",
+            gpu=gpu,
+        )
 
     def _monitor(self, ctx, s, background=False):
         for key, entry in s["entries"].items():
@@ -513,8 +554,9 @@ class ExperimentStage:
 
     def background(self, ctx):
         """暂停/等待时只收集已结束的记录，绝不提交或重新提交。"""
-        allowed = type(ctx.executor) is FakeExecutor or (
-            type(ctx.executor) is LocalExecutor and ctx.project.experiment.get("allow_local_execution") is True
+        allowed = isinstance(ctx.executor, Executor) and (
+            getattr(ctx.executor, "simulation", False) is True
+            or ctx.project.experiment.get("allow_local_execution") is True
         )
         if not allowed or not ctx.scratch.get("experiment", {}).get("entries"):
             return
@@ -600,7 +642,8 @@ class ExperimentStage:
         )
         ctx.executor.prepare(
             RunSpec(
-                record=record, run_dir=d, config=entry["config"], trial=entry["trial"], gpu=uses_gpu(entry["config"])
+                record=record, run_dir=d, config=entry["config"], trial=entry["trial"],
+                gpu=uses_gpu(entry["config"], approved.task),
             )
         )
         if s["simulation"]:
@@ -676,6 +719,11 @@ class ExperimentStage:
             if operations is not None:
                 while not operations.empty():
                     action, pending = operations.get_nowait()
+                    if future.done():
+                        pending.cancel()
+                        continue
+                    if not pending.set_running_or_notify_cancel():
+                        continue
                     try:
                         pending.set_result(action())
                     except Exception as exc:
@@ -728,20 +776,34 @@ class ExperimentStage:
                 )
         state["coder_job"] = {"experiment": eid}
         operations = _COMMITS[identity] = queue.Queue()
+        abandoned = threading.Event()
 
         def on_engine(action):
             # Keep workspace/state mutations on the engine thread. The worker
             # only calls the model and polls already submitted trials.
+            if abandoned.is_set():
+                raise RuntimeError("Coding operation abandoned after dispatch timeout")
             pending = Future()
-            operations.put((action, pending))
-            return pending.result(timeout=330)
+
+            def guarded():
+                if abandoned.is_set():
+                    raise RuntimeError("Expired coding operation cannot execute")
+                return action()
+
+            operations.put((guarded, pending))
+            try:
+                return pending.result(timeout=CODER_DISPATCH_TIMEOUT_S)
+            except TimeoutError:
+                abandoned.set()
+                pending.cancel()
+                raise
 
         def commit(message, author="agent:experiment"):
             return on_engine(lambda: ctx.workspace.commit(message, author=author))
 
         def trial(key):
             # The coding worker may wait; the engine thread continues returning Wait.
-            if type(ctx.executor) is LocalExecutor:
+            if isinstance(ctx.executor, LocalExecutor) and not getattr(ctx.executor, "simulation", False):
                 preflight(ctx)
                 ctx.executor._captured_environment = None
             trial_key = f"coder-{eid}-{rand_hex(8)}"
@@ -836,9 +898,9 @@ class ExperimentStage:
                     raise ValueError("Human edit changed a protected file")
             for task_key, other in s["entries"].items():
                 path = ctx.root / "configs" / other["experiment_id"] / (task_key + ".yaml")
-                if json.loads(path.read_text()) != other["config"]:
+                if json.loads(path.read_text(encoding="utf-8")) != other["config"]:
                     raise ValueError("Human edit changed a generated configuration")
-            if type(ctx.executor) is LocalExecutor:
+            if isinstance(ctx.executor, LocalExecutor) and not getattr(ctx.executor, "simulation", False):
                 preflight(ctx)
                 ctx.executor._captured_environment = None
             s["commit"] = s["workspace_commit"] = ctx.workspace.commit("human-edited", author="user")

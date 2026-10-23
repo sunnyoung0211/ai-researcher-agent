@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import subprocess
+from copy import copy
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -169,9 +170,9 @@ def run_coder(ctx, approved, experiment, entries, run_trial, error="", commit=No
     try:
         if ctx.budget.check().exhausted:
             raise ValueError("Budget exhausted before coder session")
-        backend = ctx.llm.backend
-        if isinstance(backend, LiteLLMBackend) and not isinstance(backend, _BudgetCheckedBackend):
-            ctx.llm.backend = _BudgetCheckedBackend(backend, ctx.budget)
+        # Share gateway accounting/permissions but never replace the engine's backend.
+        gateway = copy(ctx.llm)
+        gateway.backend = _BudgetCheckedBackend(ctx.llm.backend, ctx.budget)
         schema = ctx.root / "src/config_schema.json"
         method_source = None
         if experiment.method.isidentifier():
@@ -193,7 +194,7 @@ def run_coder(ctx, approved, experiment, entries, run_trial, error="", commit=No
             "semantic_keys": task.semantic_keys,
             "protected_files": task.protected_files,
         }
-        response = ctx.llm.tool_loop(
+        response = gateway.tool_loop(
             role="exp.coder",
             prompt_id="experiment/coder",
             tier="strong",

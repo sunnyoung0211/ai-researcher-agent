@@ -19,6 +19,7 @@ from airesearcher.engine import checkpoint
 from airesearcher.engine.engine import ProjectEngine
 from airesearcher.engine.stage import describe
 from airesearcher.runtime.local import LocalExecutor
+from airesearcher.runtime.task import load_task_config
 from airesearcher.services.runs import list_runs
 from airesearcher.stages.experiment.stage import uses_gpu
 from airesearcher.testing.contracts import check_project
@@ -68,7 +69,7 @@ def print_runs(project, seen):
         seen[record.run_id] = status.state
         d = project.root / "runs" / record.run_id
         config = json.loads((d / "config.yaml").read_text(encoding="utf-8"))
-        device = "GPU/CUDA" if uses_gpu(config) else "CPU"
+        device = "GPU/CUDA" if uses_gpu(config, load_task_config(project.config.task)) else "CPU"
         print(
             f"[{status.state.value}] {config['method']} seed={record.seed} "
             f"{'trial' if record.kind == 'trial' else 'formal'} | 计划设备={device} | {record.run_id}",

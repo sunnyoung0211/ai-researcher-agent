@@ -17,7 +17,7 @@ def test_run_aggregate_log_contracts_and_source_parents(air_home):
     assert runs.resolve_value(project.root, "all", row.group, row.metric, "mean") == row.mean
     ref = project.archive.latest("artifacts/aggregates/all.json")
     assert any(p.artifact_id.startswith("runs/") for p in project.archive.version_info(ref).parents)
-    log = (project.root / "logs/round_1.md").read_text()
+    log = (project.root / "logs/round_1.md").read_text(encoding="utf-8")
     assert [
         line
         for line in log.splitlines()

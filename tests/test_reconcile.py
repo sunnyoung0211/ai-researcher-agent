@@ -41,5 +41,5 @@ def test_missing_or_invalid_status_is_unknown(project):
     assert ex.reconcile("r-absent").state == RunState.unknown
     spec = _spec(project, ex, "r-corrupt", {"method": "main"})
     ex.prepare(spec)
-    (spec.run_dir / "status.json").write_text("broken")
+    (spec.run_dir / "status.json").write_text("broken", encoding="utf-8")
     assert ex.reconcile("r-corrupt").state == RunState.unknown

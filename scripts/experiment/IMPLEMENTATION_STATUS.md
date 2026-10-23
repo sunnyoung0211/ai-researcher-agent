@@ -4,6 +4,18 @@ Authority: docs/AI_Researcher_Agent_需求分析.md; docs/详细设计/3_实验�
 docs/开工指南/实验.md. The user subsequently required retaining the existing configuration
 schema and stopping on unsupported configurations. No research novelty feature is added.
 
+PR review follow-up (2026-10-23): byte-exact UTF-8 environment locks; best-effort,
+permission-checked inspection; explicit uncertain-submission recovery; task-declared
+method aliases, accelerator requirements and trial overrides; cancelled expired
+coding operations; session-local gateway budget adaptation; process-identity checks
+and detached data workers; cached planning hashes with fresh submission verification.
+Production stages no longer import concrete testing backend classes.
+Final Ubuntu/Python 3.12 offline regression: 481 passed, 6 opt-in paid tests skipped,
+0 failed (384.96 s), with one upstream Pydantic warning. Ruff, all five import
+contracts, skill verification, pip check and diff checks passed. No paid API calls
+or classifier training were performed. Windows/macOS reruns remain CI work after
+the revision is pushed; the protected configuration schema is unchanged.
+
 | Requirements | Implementation | Validation boundary |
 |---|---|---|
 | FR-20–23 | Exact approved idea; planning skill and existing LLMGateway.complete; Cartesian tasks; prechecks; two bounded revisions; versioned plan approval and explicit risk acceptance | FakeLLM regression and a live OpenRouter plan; unknown licenses remain warnings |

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from airesearcher.core.fsutil import atomic_write_json, sha256_file
@@ -20,7 +21,26 @@ from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.core.models.run import InputRef
 from airesearcher.core.workspace import air_home, repo_root, resolve_task_dir
 
+from .procs import detached_kwargs, pid_matches
+
 CHECKSUMS = "environments/data_checksums.json"
+
+
+@lru_cache(maxsize=512)
+def _cached_sha256(path, fingerprint):
+    return sha256_file(Path(path))
+
+
+def prepared_sha256(path):
+    """Cache planning checks by file identity/size/timestamps; submission still rehashes."""
+    path = Path(path).resolve()
+    stat = path.stat()
+    fingerprint = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    result = _cached_sha256(str(path), fingerprint)
+    after = path.stat()
+    if fingerprint != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        raise ValueError(f"Prepared input changed while hashing: {path.name}")
+    return result
 
 
 @dataclass
@@ -49,13 +69,13 @@ def inventory(task):
             meta = json.loads(manifest.read_text(encoding="utf-8"))
             for name, info in meta.get("files", {}).items():
                 reference[name] = reference.get(name) or info.get("sha256")
-            entries.append(InputRef(name=f"{data.name}/manifest", path=str(manifest), sha256=sha256_file(manifest)))
+            entries.append(InputRef(name=f"{data.name}/manifest", path=str(manifest), sha256=prepared_sha256(manifest)))
         for name, expected in reference.items():
             path = _relative(base, name)
             if not path.is_file():
                 missing.append((data.name, data.prepare, base))
                 continue
-            digest = sha256_file(path)
+            digest = prepared_sha256(path)
             entries.append(InputRef(name=f"{data.name}/{name}", path=str(path), sha256=digest))
             if expected and expected != digest:
                 mismatches.append(f"{data.name}/{name}")
@@ -69,13 +89,13 @@ def inventory(task):
             if meta["model_name"] not in task.models or not meta["files"]:
                 raise ValueError("Model manifest does not match the task")
             model = Path(os.environ.get("AIR_MODEL_DIR", meta["local_dir"])).expanduser().resolve()
-            entries.append(InputRef(name="model/manifest", path=str(path), sha256=sha256_file(path)))
+            entries.append(InputRef(name="model/manifest", path=str(path), sha256=prepared_sha256(path)))
             for name, expected in meta["files"].items():
                 target = _relative(model, name)
                 if not target.is_file():
                     missing.append((f"{data.name}_model", [], base))
                     continue
-                digest = sha256_file(target)
+                digest = prepared_sha256(target)
                 entries.append(InputRef(name=f"model/{name}", path=str(target), sha256=digest))
                 if digest != expected:
                     mismatches.append(f"model/{name}")
@@ -102,9 +122,10 @@ def ensure_data(ctx, task):
     if job:
         result = Path(job["result"])
         if not result.exists():
-            import psutil
-
-            if not psutil.pid_exists(job["pid"]):
+            identity = job.get("spec") or str(result.with_name(
+                result.name.removesuffix(".result.json") + ".job.json"
+            ))
+            if not pid_matches(job["pid"], identity):
                 return _question("Preparation worker disappeared; inspect " + job["log"], ["retry", "end"])
             return DataStatus(False, "Preparing data; see " + job["log"], waiting=True)
         outcome = json.loads(result.read_text(encoding="utf-8"))
@@ -121,6 +142,7 @@ def ensure_data(ctx, task):
             if data.source.startswith("huggingface:"):
                 ctx.permissions.guard("network", "huggingface.co", actor="agent:experiment/data")
         folder = ctx.root / "environments"
+        ctx.permissions.guard("write", str(folder), actor="agent:experiment/data")
         folder.mkdir(exist_ok=True)
         log = folder / f"prepare_{name}.log"
         result = folder / f"prepare_{name}.result.json"
@@ -146,9 +168,9 @@ def ensure_data(ctx, task):
                 env=env,
                 stdout=stream,
                 stderr=subprocess.STDOUT,
-                start_new_session=(os.name != "nt"),
+                **detached_kwargs(),
             )
-        state["job"] = {**values, "pid": p.pid}
+        state["job"] = {**values, "pid": p.pid, "spec": str(spec)}
         return DataStatus(False, "Data preparation started", waiting=True)
     path = ctx.root / CHECKSUMS
     values = [ref.model_dump() for ref in refs]
