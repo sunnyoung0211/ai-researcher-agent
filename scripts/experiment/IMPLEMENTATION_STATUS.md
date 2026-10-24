@@ -16,6 +16,22 @@ contracts, skill verification, pip check and diff checks passed. No paid API cal
 or classifier training were performed. Windows/macOS reruns remain CI work after
 the revision is pushed; the protected configuration schema is unchanged.
 
+Review follow-up (2026-10-25): when an expired coding dispatch prevents cleanup,
+the worker exception carries its session-start source/configuration snapshot.
+The engine restores that snapshot directly before offering retry, reports the
+reverted files, and retains the recovery task if rollback itself fails. Rejected
+edits are not accepted as a user-confirmed version or used by subsequent trials.
+The regression reproduces real FakeLLM file edits followed by a paused trial;
+it failed before the fix and now verifies byte-exact restoration and later run
+code snapshots. Related offline regression: 48 passed, no paid model calls or
+classifier training. Full-suite validation for this revision is recorded separately.
+
+Final Ubuntu/Python 3.12 regression for the rollback fix: 483 passed, 6 opt-in paid
+tests skipped, 0 failed (401.31 s), with one upstream Pydantic warning. The updated
+CRLF/cleanup-retry regression also passed both cases. Ruff, five import contracts,
+skill verification, pip check and diff checks passed. The reviewer reported all
+seven CI checks green for 2115628; this new revision still needs a CI rerun after push.
+
 | Requirements | Implementation | Validation boundary |
 |---|---|---|
 | FR-20–23 | Exact approved idea; planning skill and existing LLMGateway.complete; Cartesian tasks; prechecks; two bounded revisions; versioned plan approval and explicit risk acceptance | FakeLLM regression and a live OpenRouter plan; unknown licenses remain warnings |

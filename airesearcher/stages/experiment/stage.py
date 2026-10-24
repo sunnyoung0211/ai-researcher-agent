@@ -35,7 +35,7 @@ from airesearcher.services import runs as run_service
 
 from .aggregate import publish_results
 from .analysis import analyze, checks, decide, fits_budget, log_id, publish_log
-from .coder import preflight, run_coder, source_hashes
+from .coder import CoderRollbackRequired, preflight, restore, run_coder, snapshot, source_hashes
 from .repair import error_class, recovery
 
 SETTLED = {"done", "skipped", "blocked"}
@@ -730,13 +730,35 @@ class ExperimentStage:
                         pending.set_exception(exc)
             if not future.done():
                 return Wait("Coding session / bounded trial in progress", seconds=0.1)
+            try:
+                result = future.result()
+            except CoderRollbackRequired as exc:
+                current = snapshot(ctx.root)
+                reverted = sorted(
+                    name for name in current.keys() | exc.before.keys() if current.get(name) != exc.before.get(name)
+                )
+                try:
+                    ctx.workspace.commit("Failed coder candidate", author="agent:experiment")
+                finally:
+                    # Already on the engine thread: bypass the expired worker queue.
+                    restore(ctx, exc.before, commit=ctx.workspace.commit)
+                result = {
+                    "ok": False,
+                    "problems": [
+                        "Unvalidated coder changes have been restored to the session-start snapshot. "
+                        f"Session failure: {exc}. Files reverted: {', '.join(reverted) or 'none'}.",
+                    ],
+                    "report": {"needs_plan_change": False},
+                    "rolled_back": True,
+                    "reverted_files": reverted,
+                }
+            except Exception as exc:
+                result = {"ok": False, "problems": [str(exc)], "report": {"needs_plan_change": False}}
+            # Retain the snapshot-bearing future if rollback itself fails, so resume
+            # retries cleanup before a new coding session or training can start.
             _JOBS.pop(identity)
             _COMMITS.pop(identity, None)
             state.pop("coder_job")
-            try:
-                result = future.result()
-            except Exception as exc:
-                result = {"ok": False, "problems": [str(exc)], "report": {"needs_plan_change": False}}
             state["workspace_commit"] = ctx.workspace.head()
             state["source_hashes"] = source_hashes(ctx.root)
             eid = state["code_queue"].pop(0)

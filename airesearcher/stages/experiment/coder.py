@@ -42,6 +42,14 @@ class CoderReport(BaseModel):
     plan_change_reason: str = ""
 
 
+class CoderRollbackRequired(RuntimeError):
+    """Carry the session snapshot to the engine if worker-side cleanup cannot run."""
+
+    def __init__(self, before, cause):
+        super().__init__(str(cause) or type(cause).__name__)
+        self.before = before
+
+
 def snapshot(root):
     return {
         p.relative_to(root).as_posix(): p.read_bytes()
@@ -216,9 +224,15 @@ def run_coder(ctx, approved, experiment, entries, run_trial, error="", commit=No
         # A successful same-commit trial is still enforced by the stage even if
         # the coder finishes without using run_trial.
         return {"ok": True, "report": report.model_dump(), "changed_files": sorted(changed), "trials": trials}
-    except Exception:
-        commit("Failed coder candidate", author="agent:experiment")
-        dispatch(lambda: restore(ctx, before))
+    except Exception as exc:
+        try:
+            try:
+                commit("Failed coder candidate", author="agent:experiment")
+            finally:
+                dispatch(lambda: restore(ctx, before))
+        except Exception as cleanup_error:
+            # An abandoned dispatch queue must not also discard the rollback.
+            raise CoderRollbackRequired(before, exc) from cleanup_error
         raise
 
 

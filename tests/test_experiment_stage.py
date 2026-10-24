@@ -78,6 +78,107 @@ def test_paused_expired_coder_trial_is_never_submitted_on_resume(air_home, monke
     assert identity not in stage._COMMITS and identity not in stage._JOBS
 
 
+@pytest.mark.parametrize("retry_cleanup", [False, True])
+def test_paused_coder_edits_are_rolled_back_before_user_retry_and_later_trials(
+    air_home, tmp_path, monkeypatch, retry_cleanup
+):
+    import threading
+    import time
+
+    from airesearcher.stages.experiment import stage
+    from airesearcher.stages.experiment.coder import snapshot
+    from scripts.plan.fixtures import fixture_idea
+
+    draft = preset_draft(fixture_idea("tasks/smoke"), "tasks/smoke")
+    draft["experiments"][0]["needs_code"] = True
+    project, engine, executor = prepared(air_home, draft=draft)
+    engine.tick()
+    if retry_cleanup:
+        # Exercise Windows-style working bytes even on Linux; Git archives use
+        # the committed blob, which may have different line endings.
+        project.workspace._git("config", "core.autocrlf", "true")
+        entrypoint = project.root / "src/run.py"
+        entrypoint.write_bytes(entrypoint.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    before = snapshot(project.root)
+    accepted_code = tmp_path / "accepted-code"
+    project.workspace.export_src(project.workspace.head(), accepted_code)
+    accepted_entrypoint = (accepted_code / "run.py").read_bytes()
+    edits = coder_reply()
+    edits.calls[-1] = ("write_file", {
+        "path": "src/run.py", "content": before["src/run.py"].decode("utf-8") + "\n# Unvalidated coder edit\n",
+    })
+    finish = coder_reply().calls[-1]
+    backend = engine.llm.backend
+    backend.script["experiment/coder"] = [edits, FakeToolCalls([("run_trial", {"task_key": "trial-E1"}), finish])]
+    edits_applied, allow_trial = threading.Event(), threading.Event()
+    original_call = backend.call
+
+    def gated_call(request):
+        if request.prompt_id == "experiment/coder" and backend.calls:
+            edits_applied.set()
+            assert allow_trial.wait(timeout=10), "Test must release the offline trial response"
+        return original_call(request)
+
+    monkeypatch.setattr(backend, "call", gated_call)
+    monkeypatch.setattr(stage, "CODER_DISPATCH_TIMEOUT_S", 1)
+    engine_thread = threading.get_ident()
+    original_commit = project.workspace.commit
+
+    def engine_commit(*args, **kwargs):
+        assert threading.get_ident() == engine_thread
+        return original_commit(*args, **kwargs)
+
+    monkeypatch.setattr(project.workspace, "commit", engine_commit)
+    original_restore = stage.restore
+    restore_attempts = []
+
+    def engine_restore(*args, **kwargs):
+        assert threading.get_ident() == engine_thread
+        restore_attempts.append(True)
+        if retry_cleanup and len(restore_attempts) == 1:
+            raise OSError("Synthetic rollback write failure")
+        return original_restore(*args, **kwargs)
+
+    monkeypatch.setattr(stage, "restore", engine_restore)
+    deadline = time.monotonic() + 10
+    try:
+        while not edits_applied.is_set():
+            assert time.monotonic() < deadline, "Coder did not apply its edits"
+            engine.tick()
+            time.sleep(0.01)
+        assert snapshot(project.root) != before and (project.root / "src/session_check.py").exists()
+        rejected_commit = project.workspace.head()
+        worker = stage._JOBS[str(project.root)]
+        engine.request_action("pause")
+    finally:
+        allow_trial.set()
+    with pytest.raises(RuntimeError, match="abandoned"):
+        worker.result(timeout=10)
+    assert not executor.submitted
+    engine.request_action("resume")
+    drive(engine, S.Paused)
+    if retry_cleanup:
+        assert "Synthetic rollback write failure" in engine.ck.reason
+        assert project.questions.pending() is None and not executor.submitted
+        assert stage._JOBS[str(project.root)] is worker
+        engine.request_action("resume")
+        drive(engine, S.Paused)
+    assert snapshot(project.root) == before
+    question = project.questions.pending()
+    assert "restored" in question.text and "src/session_check.py" in question.text
+    assert not executor.submitted
+    assert not project.workspace.dirty()
+    project.questions.answer(question.question_id, "retry", request_id="retry-after-coder-rollback")
+    drive(engine, S.Analyzing)
+    assert len(executor.submitted) == 12
+    for view in list_runs(project.root):
+        assert view.record.code_commit != rejected_commit
+        code = project.root / "runs" / view.record.run_id / "code"
+        assert not (code / "session_check.py").exists()
+        assert (code / "run.py").read_bytes() == accepted_entrypoint
+    assert project.budget.used().get("llm_usd", 0) == 0
+
+
 @pytest.mark.parametrize("choice", ["mark_lost_retry", "end"])
 def test_uncertain_launch_requires_human_decision_and_preserves_old_attempt(air_home, monkeypatch, choice):
     from airesearcher.core.fsutil import atomic_write_json
