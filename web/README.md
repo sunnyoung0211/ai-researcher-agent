@@ -70,6 +70,7 @@ npm run dev:mock
 | `src/constants/labels.js` | 英文枚举 → 中文和颜色（与 `airesearcher/cli/labels.py` 一致），新值显示原文 |
 | `src/utils/useLoader.js` | 页面的“加载中 / 出错 / 数据”三态；`useProject()` 取项目上下文；`useProjectRefresh()` 收到 SSE 通知后静默刷新 |
 | `src/pages/ProjectLayout.vue` | 项目内页面的外框：左侧菜单（审批带红点），订阅一次项目 SSE；断线时显示提示并每 10 秒轮询 |
+| `src/icons.js` | 只注册用到的图标；Element Plus 组件由 `vite.config.js` 按需引入。新用一个图标时先在这里加上 |
 | `src/components/` | `StateTag`、`BudgetBar`、`MarkdownView`、`DiffView`、`LogViewer`、`PdfViewer`、`EvidenceChain`、`QuestionCard`、`PageState` 等 |
 
 ## 几条约定（改代码前读一下）

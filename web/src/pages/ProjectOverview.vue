@@ -7,7 +7,7 @@ import BudgetBar from '../components/BudgetBar.vue'
 import QuestionCard from '../components/QuestionCard.vue'
 import EmptyState from '../components/EmptyState.vue'
 import TimeText from '../components/TimeText.vue'
-import { exportUrl, listCheckpoints, listEvents, patchBudget, projectAction, rollback } from '../api/projects'
+import { exportUrl, latestEvents, listCheckpoints, patchBudget, projectAction, rollback } from '../api/projects'
 import { newRequestId } from '../api/client'
 import { BUDGET, KIND, RUN_KIND, STATE, label } from '../constants/labels'
 import { duration } from '../utils/format'
@@ -21,10 +21,7 @@ const pid = ctx.pid
 const st = computed(() => ctx.status.value)
 
 // ---------------------------------------------------------------- 最近动态（最近 20 条，新的在上）
-const events = useLoader(async () => {
-  const all = await listEvents(pid.value, { limit: 100000 })
-  return all.slice(-20).reverse()
-})
+const events = useLoader(async () => (await latestEvents(pid.value, 20)).reverse())
 onMounted(() => events.load())
 useProjectRefresh(events.load, ['event'])
 

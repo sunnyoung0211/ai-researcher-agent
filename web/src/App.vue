@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { http } from './api/client'
 import { USE_MOCK } from './mock'
 
@@ -20,6 +21,7 @@ onBeforeUnmount(() => clearInterval(timer))
 </script>
 
 <template>
+  <el-config-provider :locale="zhCn">
   <el-container class="app">
     <el-header class="top">
       <router-link to="/projects" class="brand">
@@ -36,6 +38,7 @@ onBeforeUnmount(() => clearInterval(timer))
       title="连不上后台：请在终端运行 air serve（保持窗口开着），页面会自动恢复" />
     <el-main class="main"><router-view /></el-main>
   </el-container>
+  </el-config-provider>
 </template>
 
 <style scoped>

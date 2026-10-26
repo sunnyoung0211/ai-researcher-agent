@@ -54,10 +54,9 @@ function connect() {
       }
     },
     onOpen() {
-      if (!connected.value) { // 重连成功：补读一次，防止漏掉断线期间的变化
-        refresh()
-        notice.value = { type: 'poll', at: Date.now() }
-      }
+      // 每次连上（包括第一次）都补读一次：第一次读状态到 SSE 连上之间、或断线期间的变化不会漏掉
+      refresh()
+      notice.value = { type: 'poll', at: Date.now() }
       connected.value = true
       stopPolling()
     },

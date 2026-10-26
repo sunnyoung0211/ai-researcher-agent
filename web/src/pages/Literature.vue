@@ -31,6 +31,8 @@ async function open(paperId) {
 watch(() => [route.query.paper, data.value], ([p]) => { if (p && data.value && !drawer.open) open(p) }, { immediate: true })
 watch(() => drawer.open, (o) => { if (!o && route.query.paper) router.replace({ query: {} }) })
 
+// 只把 http(s) 链接做成可点的，防止 javascript: 之类的地址
+const safeUrl = (u) => (/^https?:\/\//i.test(u || '') ? u : '')
 const authors = (a) => (a.length > 3 ? a.slice(0, 3).join(', ') + ' 等' : a.join(', '))
 const ROLE = { methods: '方法', feasibility: '可行性', single: '综合' }
 const CONF = { high: '高', medium: '中', low: '低' }
@@ -68,7 +70,8 @@ const CONF = { high: '高', medium: '中', low: '低' }
           <StateTag kind="access" :value="drawer.paper.access_level" />
           <span>{{ drawer.paper.authors.join(', ') }}</span>
           <span class="muted">{{ drawer.paper.venue }} {{ drawer.paper.year }}</span>
-          <a :href="drawer.paper.url" target="_blank" rel="noopener" class="link">打开原文链接 ↗</a>
+          <a v-if="safeUrl(drawer.paper.url)" :href="safeUrl(drawer.paper.url)" target="_blank" rel="noopener noreferrer" class="link">打开原文链接 ↗</a>
+          <span v-else-if="drawer.paper.url" class="muted mono">{{ drawer.paper.url }}</span>
         </div>
         <el-alert v-if="drawer.paper.access_level !== 'full_text'" type="warning" :closable="false" show-icon class="mb"
           title="没有取得全文：下面的阅读卡只基于摘要/元数据，结论需要谨慎看待" />

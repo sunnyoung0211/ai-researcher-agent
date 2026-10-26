@@ -8,6 +8,7 @@ const data = (name) => files[`./data/${name}.json`]
 // [路径正则, 文件名]；从上到下匹配第一条
 const ROUTES = [
   [/^\/tasks$/, 'tasks'],
+  [/^\/defaults$/, 'defaults'],
   [/^\/projects$/, 'projects'],
   [/^\/projects\/[^/]+$/, 'project_status'],
   [/^\/projects\/[^/]+\/approvals$/, 'approvals'],

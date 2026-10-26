@@ -70,9 +70,10 @@ async function submit(choice) {
     <el-input v-if="question.allow_text" v-model="text" type="textarea" :rows="3" class="txt"
       :placeholder="textRequired ? '请填写回答（必填）' : '补充说明（可选）'" />
     <div class="opts">
-      <el-button v-for="o in question.options" :key="o.id" :type="o.id === 'end' ? 'danger' : o.default ? 'primary' : 'default'"
+      <!-- default 是“无人值守时自动选的安全选项”，不是推荐，所以不突出显示，只加一句说明 -->
+      <el-button v-for="o in question.options" :key="o.id" :type="o.id === 'end' ? 'danger' : 'default'"
         :plain="o.id === 'end'" :loading="submitting === o.id" :disabled="!!submitting && submitting !== o.id" @click="submit(o.id)">
-        {{ o.label }}<span v-if="o.default" class="dflt">（推荐）</span>
+        {{ o.label }}<span v-if="o.default" class="dflt">（无人值守时的默认选项）</span>
       </el-button>
       <el-button v-if="textRequired" type="primary" :loading="submitting === 'text'" :disabled="!!submitting" @click="submit(null)">提交回答</el-button>
     </div>
