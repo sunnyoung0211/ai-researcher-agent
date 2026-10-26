@@ -14,5 +14,5 @@ defineProps({ src: { type: String, required: true }, height: { type: String, def
 </template>
 
 <style scoped>
-.pdf { width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; background: #fff; }
+.pdf { width: 100%; border: 1px solid var(--el-border-color-lighter); border-radius: var(--air-radius-sm); background: #fff; }
 </style>

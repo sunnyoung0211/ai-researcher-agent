@@ -80,8 +80,8 @@ async function saveLabel() {
 <template>
   <PageState :loading="loading && !data" :error="error" @retry="load()">
     <div v-if="data" class="card-gap">
+      <router-link :to="`/projects/${pid}/runs`" class="back"><el-icon><ArrowLeft /></el-icon>运行列表</router-link>
       <div class="page-title">
-        <router-link :to="`/projects/${pid}/runs`"><el-button icon="ArrowLeft" text>运行列表</el-button></router-link>
         <h2><CopyText :text="rec.run_id" /></h2>
         <StateTag kind="run" :value="st.state" />
         <StateTag v-if="data.label" kind="runLabel" :value="data.label.label" />

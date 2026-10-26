@@ -1,10 +1,16 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import AppSidebar from './components/AppSidebar.vue'
 import { http } from './api/client'
 import { USE_MOCK } from './mock'
 
-// 整体布局：顶栏 + 内容区（项目内页面由 ProjectLayout 再加左侧菜单）。每 15 秒检查一次后台是否在线
+// 整体布局：左侧边栏 + 居中的内容区（限制最大宽度）。每 15 秒检查一次后台是否在线
+const route = useRoute()
+const wide = computed(() => !!route.meta.wide)
+// 内容区是自己滚动的，换页面时手动回到顶部
+watch(() => route.path, () => document.getElementById('main')?.scrollTo(0, 0))
 const online = ref(true)
 let timer = null
 async function ping() {
@@ -22,34 +28,25 @@ onBeforeUnmount(() => clearInterval(timer))
 
 <template>
   <el-config-provider :locale="zhCn">
-  <el-container class="app">
-    <el-header class="top">
-      <router-link to="/projects" class="brand">
-        <el-icon size="22"><Reading /></el-icon>
-        <span>AI Researcher</span>
-      </router-link>
-      <router-link to="/projects" class="nav">项目列表</router-link>
-      <router-link to="/projects/new" class="nav">新建项目</router-link>
-      <span class="spacer" />
-      <el-tag v-if="USE_MOCK" type="warning" effect="dark">假数据模式</el-tag>
-      <a href="/docs" target="_blank" rel="noopener" class="nav muted">接口文档</a>
-    </el-header>
-    <el-alert v-if="!online" type="error" :closable="false" show-icon center
-      title="连不上后台：请在终端运行 air serve（保持窗口开着），页面会自动恢复" />
-    <el-main class="main"><router-view /></el-main>
-  </el-container>
+    <div class="app">
+      <AppSidebar />
+      <main id="main" class="main">
+        <div v-if="!online || USE_MOCK" class="banner-row">
+          <el-alert v-if="!online" type="error" :closable="false" show-icon
+            title="连不上后台：请在终端运行 air serve（保持窗口开着），页面会自动恢复" />
+          <el-alert v-else type="warning" :closable="false" show-icon title="假数据模式：显示的是样例数据，不能提交操作" />
+        </div>
+        <div :class="['container', { wide }]"><router-view /></div>
+      </main>
+    </div>
   </el-config-provider>
 </template>
 
 <style scoped>
-.app { height: 100%; flex-direction: column; }
-.top {
-  display: flex; align-items: center; gap: 20px; background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter); height: 52px;
-}
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; color: var(--el-color-primary); text-decoration: none; }
-.nav { color: var(--el-text-color-regular); text-decoration: none; font-size: 14px; }
-.nav.router-link-exact-active { color: var(--el-color-primary); font-weight: 600; }
-.main { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.main > :deep(.page) { padding: 20px 24px; overflow: auto; flex: 1; }
+.app { display: flex; height: 100%; }
+.main { flex: 1; min-width: 0; overflow-y: auto; }
+.banner-row { max-width: 1440px; margin: 16px auto 0; padding: 0 40px; }
+.container { max-width: 1120px; margin: 0 auto; padding: 32px 40px 64px; }
+.container.wide { max-width: 1440px; }
+@media (max-width: 900px) { .container, .banner-row { padding-left: 20px; padding-right: 20px; } }
 </style>

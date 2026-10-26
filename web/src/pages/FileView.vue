@@ -61,8 +61,8 @@ const go = () => router.push({ query: { path: input.value.trim() } })
 
 <template>
   <div>
+    <a class="back" href="#" @click.prevent="router.back()"><el-icon><ArrowLeft /></el-icon>返回</a>
     <div class="page-title">
-      <el-button icon="ArrowLeft" text @click="router.back()">返回</el-button>
       <h2>文件查看</h2>
     </div>
     <div class="toolbar">

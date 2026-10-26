@@ -3,7 +3,7 @@
 Vue 3 + Vite + Element Plus 做的网页，通过后台 HTTP 接口完成整个研究流程。设计见
 [详细设计 5](../docs/详细设计/5_GUI_详细设计.md)，接口见启动后台后的 <http://127.0.0.1:8765/docs>。
 
-网页**只负责显示和提交操作**：项目状态、审批、运行全部从后台读取，浏览器里只存“界面偏好”（日志自动滚动、每页条数）。
+网页**只负责显示和提交操作**：项目状态、审批、运行全部从后台读取，浏览器里只存“界面偏好”（外观、侧边栏折叠、日志自动滚动、每页条数）。
 
 ## 用法
 
@@ -69,11 +69,16 @@ npm run dev:mock
 | `src/api/` | 每个接口一个函数，页面不直接写网址；`client.js` 统一错误提示，`stream.js` 封装 SSE |
 | `src/constants/labels.js` | 英文枚举 → 中文和颜色（与 `airesearcher/cli/labels.py` 一致），新值显示原文 |
 | `src/utils/useLoader.js` | 页面的“加载中 / 出错 / 数据”三态；`useProject()` 取项目上下文；`useProjectRefresh()` 收到 SSE 通知后静默刷新 |
-| `src/pages/ProjectLayout.vue` | 项目内页面的外框：左侧菜单（审批带红点），订阅一次项目 SSE；断线时显示提示并每 10 秒轮询 |
+| `src/style.css` | 主题：颜色、字号、圆角都是 CSS 变量（`--air-*`），并映射到 Element Plus 的 `--el-*`；`html.dark` 下是深色。改颜色只改这里 |
+| `src/utils/theme.js` | 外观：跟随系统 / 浅色 / 深色（侧边栏底部切换） |
+| `src/components/AppSidebar.vue` | 左侧边栏：全局导航 + 当前项目的菜单（审批带待审数量），可折叠 |
+| `src/pages/ProjectLayout.vue` | 项目内页面的外框：顶部一行项目名，订阅一次项目 SSE；断线时显示提示并每 10 秒轮询 |
 | `src/icons.js` | 只注册用到的图标；Element Plus 组件由 `vite.config.js` 按需引入。新用一个图标时先在这里加上 |
 | `src/components/` | `StateTag`、`BudgetBar`、`MarkdownView`、`DiffView`、`LogViewer`、`PdfViewer`、`EvidenceChain`、`QuestionCard`、`PageState` 等 |
 
 ## 几条约定（改代码前读一下）
+
+- **样式**：颜色一律用 `var(--air-*)` 变量，不要写死颜色值，否则深色模式会出问题；一个区域只放一个主按钮（`type="primary"`）；长文用 `<MarkdownView reading />`（阅读模式）。
 
 - **SSE 只当通知**：收到后 0.5 秒内重新请求 REST 接口，多条通知合并成一次请求。
 - **按钮是否出现只看后台的 `next_actions`**（例外：“取消项目”后台没有列出，按引擎规则在“已完成 / 出错停止”以外都显示）。

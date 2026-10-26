@@ -138,7 +138,7 @@ onBeforeUnmount(stopAll)
 
 <style scoped>
 .log {
-  background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 10px 12px;
+  background: #262522; color: #e6e3dc; border-radius: var(--air-radius-sm); padding: 12px 14px;
   height: 420px; overflow: auto; font-size: 12.5px; line-height: 1.55;
 }
 .ln { white-space: pre-wrap; word-break: break-all; }

@@ -17,8 +17,8 @@ watch(cid, () => load())
 
 <template>
   <div>
+    <router-link :to="`/projects/${pid}/paper`" class="back"><el-icon><ArrowLeft /></el-icon>论文与论断</router-link>
     <div class="page-title">
-      <router-link :to="`/projects/${pid}/paper`"><el-button icon="ArrowLeft" text>论文与论断</el-button></router-link>
       <h2>证据链 {{ cid }}</h2>
     </div>
     <el-card shadow="never">

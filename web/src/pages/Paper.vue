@@ -128,7 +128,7 @@ const counts = computed(() => paper.data.value?.review_summary?.counts || {})
 
             <el-tab-pane label="核验报告" name="review">
               <div v-if="paper.data.value?.review_summary" class="counts">
-                <el-tag type="danger" effect="dark">阻断 {{ counts.blocker || 0 }}</el-tag>
+                <el-tag type="danger">阻断 {{ counts.blocker || 0 }}</el-tag>
                 <el-tag type="warning">重要 {{ counts.major || 0 }}</el-tag>
                 <el-tag type="info">次要 {{ counts.minor || 0 }}</el-tag>
                 <span class="muted mono small">{{ paper.data.value.review_summary.file }}</span>

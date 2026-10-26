@@ -61,8 +61,8 @@ const open = (row) => router.push(`/projects/${row.project_id}`)
           <el-table-column label="阶段说明" prop="stage_label" min-width="180" />
           <el-table-column label="待办" width="170">
             <template #default="{ row }">
-              <el-tag v-if="row.pending_approvals" type="danger" effect="dark" size="small">{{ row.pending_approvals }} 个待审批</el-tag>
-              <el-tag v-if="row.has_question" type="warning" effect="dark" size="small" class="q">有问题待回答</el-tag>
+              <el-tag v-if="row.pending_approvals" type="danger" size="small">{{ row.pending_approvals }} 个待审批</el-tag>
+              <el-tag v-if="row.has_question" type="warning" size="small" class="q">有问题待回答</el-tag>
               <span v-if="!row.pending_approvals && !row.has_question" class="muted">—</span>
             </template>
           </el-table-column>
