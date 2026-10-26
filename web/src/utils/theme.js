@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue'
-import { getPref, setPref } from './format'
+import { getPref, setPref } from './prefs'
 
 // 主题：跟随系统 / 浅色 / 深色。属于界面偏好，存在 localStorage；实际是否深色由 <html class="dark"> 决定
 export const themePref = ref(getPref('theme', 'system'))

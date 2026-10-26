@@ -3,14 +3,14 @@ import {
   ArrowDown, ArrowLeft, Box, Check, CircleClose, Clock, Close, Collection, CopyDocument, Cpu, Document, Download,
   Edit, EditPen, Files, List, Odometer, PieChart, Plus, PriceTag, QuestionFilled, Reading, Refresh, RefreshLeft,
   Search, Select, Stamp, TopRight, Upload, VideoPause, VideoPlay, Fold, Expand, FolderOpened, Monitor, Sunny, Moon,
-  Link, MoreFilled, Warning, ArrowRight,
+  Link, MoreFilled, Warning, ArrowRight, ChatDotRound,
 } from '@element-plus/icons-vue'
 
 const ICONS = {
   ArrowDown, ArrowLeft, Box, Check, CircleClose, Clock, Close, Collection, CopyDocument, Cpu, Document, Download,
   Edit, EditPen, Files, List, Odometer, PieChart, Plus, PriceTag, QuestionFilled, Reading, Refresh, RefreshLeft,
   Search, Select, Stamp, TopRight, Upload, VideoPause, VideoPlay, Fold, Expand, FolderOpened, Monitor, Sunny, Moon,
-  Link, MoreFilled, Warning, ArrowRight,
+  Link, MoreFilled, Warning, ArrowRight, ChatDotRound,
 }
 
 export default {

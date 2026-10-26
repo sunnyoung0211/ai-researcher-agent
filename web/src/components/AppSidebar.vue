@@ -4,10 +4,13 @@ import { useRoute } from 'vue-router'
 import StateTag from './StateTag.vue'
 import { currentProject } from '../utils/currentProject'
 import { themePref } from '../utils/theme'
-import { getPref, setPref } from '../utils/format'
+import { getPref, setPref } from '../utils/prefs'
+import { useI18n } from 'vue-i18n'
+import { LANGS, setLang } from '../i18n'
 
 // 左侧边栏：上面是全局导航，进入项目后显示这个项目的菜单（审批带待审数量）；可以折叠成只有图标
 const route = useRoute()
+const { t, locale } = useI18n()
 const collapsed = ref(getPref('sidebar.collapsed', false))
 watch(collapsed, (v) => setPref('sidebar.collapsed', v))
 
@@ -15,23 +18,24 @@ const pid = computed(() => route.params.pid || null)
 const st = computed(() => (pid.value && currentProject.pid === pid.value ? currentProject.status : null))
 const base = computed(() => `/projects/${pid.value}`)
 const items = computed(() => [
-  { key: 'overview', to: '', icon: 'Odometer', label: '总览' },
-  { key: 'approvals', to: '/approvals', icon: 'Stamp', label: '审批', badge: st.value?.pending_approvals?.length || 0 },
-  { key: 'runs', to: '/runs', icon: 'Cpu', label: '运行', badge: st.value?.active_runs?.length || 0, quiet: true },
-  { key: 'literature', to: '/literature', icon: 'Collection', label: '文献' },
-  { key: 'figures', to: '/figures', icon: 'PieChart', label: '图表' },
-  { key: 'paper', to: '/paper', icon: 'Document', label: '论文' },
-  { key: 'events', to: '/events', icon: 'List', label: '事件日志' },
-  { key: 'templates', to: '/templates', icon: 'Files', label: '模板' },
+  { key: 'overview', to: '', icon: 'Odometer', label: t('nav.overview') },
+  { key: 'approvals', to: '/approvals', icon: 'Stamp', label: t('nav.approvals'), badge: st.value?.pending_approvals?.length || 0 },
+  { key: 'runs', to: '/runs', icon: 'Cpu', label: t('nav.runs'), badge: st.value?.active_runs?.length || 0, quiet: true },
+  { key: 'literature', to: '/literature', icon: 'Collection', label: t('nav.literature') },
+  { key: 'figures', to: '/figures', icon: 'PieChart', label: t('nav.figures') },
+  { key: 'paper', to: '/paper', icon: 'Document', label: t('nav.paper') },
+  { key: 'events', to: '/events', icon: 'List', label: t('nav.events') },
+  { key: 'templates', to: '/templates', icon: 'Files', label: t('nav.templates') },
 ])
 const active = computed(() => route.meta.menu || (route.path === '/projects/new' ? 'new' : route.path.startsWith('/projects') && !pid.value ? 'list' : ''))
 
-const THEMES = [
-  { value: 'system', icon: 'Monitor', label: '跟随系统' },
-  { value: 'light', icon: 'Sunny', label: '浅色' },
-  { value: 'dark', icon: 'Moon', label: '深色' },
-]
-const themeIcon = computed(() => THEMES.find((t) => t.value === themePref.value)?.icon || 'Monitor')
+const THEMES = computed(() => [
+  { value: 'system', icon: 'Monitor', label: t('nav.themeSystem') },
+  { value: 'light', icon: 'Sunny', label: t('nav.themeLight') },
+  { value: 'dark', icon: 'Moon', label: t('nav.themeDark') },
+])
+const themeIcon = computed(() => THEMES.value.find((x) => x.value === themePref.value)?.icon || 'Monitor')
+const langLabel = computed(() => LANGS.find((l) => l.value === locale.value)?.label)
 </script>
 
 <template>
@@ -40,23 +44,23 @@ const themeIcon = computed(() => THEMES.find((t) => t.value === themePref.value)
       <router-link v-if="!collapsed" to="/projects" class="brand">
         <el-icon size="20"><Reading /></el-icon><span>AI Researcher</span>
       </router-link>
-      <button class="icon-btn" :title="collapsed ? '展开侧边栏' : '折叠侧边栏'" @click="collapsed = !collapsed">
+      <button class="icon-btn" :title="collapsed ? t('nav.expand') : t('nav.fold')" @click="collapsed = !collapsed">
         <el-icon size="18"><component :is="collapsed ? 'Expand' : 'Fold'" /></el-icon>
       </button>
     </div>
 
     <nav class="nav">
-      <router-link to="/projects/new" :class="['item', 'new', { active: active === 'new' }]" title="新建项目">
-        <el-icon><Plus /></el-icon><span v-if="!collapsed">新建项目</span>
+      <router-link to="/projects/new" :class="['item', 'new', { active: active === 'new' }]" :title="t('nav.newProject')">
+        <el-icon><Plus /></el-icon><span v-if="!collapsed">{{ t('nav.newProject') }}</span>
       </router-link>
-      <router-link to="/projects" :class="['item', { active: active === 'list' }]" title="项目列表">
-        <el-icon><FolderOpened /></el-icon><span v-if="!collapsed">项目列表</span>
+      <router-link to="/projects" :class="['item', { active: active === 'list' }]" :title="t('nav.projects')">
+        <el-icon><FolderOpened /></el-icon><span v-if="!collapsed">{{ t('nav.projects') }}</span>
       </router-link>
     </nav>
 
     <template v-if="pid">
       <div v-if="!collapsed" class="project">
-        <div class="label">当前项目</div>
+        <div class="label">{{ t('nav.currentProject') }}</div>
         <router-link :to="base" class="ptitle" :title="st?.title">{{ st?.title || pid }}</router-link>
         <StateTag v-if="st" :value="st.state" size="small" />
       </div>
@@ -73,8 +77,8 @@ const themeIcon = computed(() => THEMES.find((t) => t.value === themePref.value)
     <div class="spacer" />
     <div class="foot">
       <el-dropdown trigger="click" placement="top-start" @command="(v) => (themePref = v)">
-        <button class="item foot-btn" title="外观">
-          <el-icon><component :is="themeIcon" /></el-icon><span v-if="!collapsed">外观</span>
+        <button class="item foot-btn" :title="t('nav.appearance')">
+          <el-icon><component :is="themeIcon" /></el-icon><span v-if="!collapsed">{{ t('nav.appearance') }}</span>
         </button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -84,8 +88,18 @@ const themeIcon = computed(() => THEMES.find((t) => t.value === themePref.value)
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <a href="/docs" target="_blank" rel="noopener" class="item" title="接口文档">
-        <el-icon><Link /></el-icon><span v-if="!collapsed">接口文档</span>
+      <el-dropdown trigger="click" placement="top-start" @command="setLang">
+        <button class="item foot-btn" :title="t('nav.language')">
+          <el-icon><ChatDotRound /></el-icon><span v-if="!collapsed">{{ langLabel }}</span>
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="l in LANGS" :key="l.value" :command="l.value" :class="{ chosen: locale === l.value }">{{ l.label }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <a href="/docs" target="_blank" rel="noopener" class="item" :title="t('nav.apiDocs')">
+        <el-icon><Link /></el-icon><span v-if="!collapsed">{{ t('nav.apiDocs') }}</span>
       </a>
     </div>
   </aside>

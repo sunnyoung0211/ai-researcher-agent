@@ -3,8 +3,8 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 // 路由表（详细设计 5 第 4.1 节）。用 hash 路由：后台用静态文件提供网页时，刷新任何页面都不会 404。
 const routes = [
   { path: '/', redirect: '/projects' },
-  { path: '/projects', component: () => import('./pages/ProjectList.vue'), meta: { title: '项目列表' } },
-  { path: '/projects/new', component: () => import('./pages/ProjectNew.vue'), meta: { title: '新建项目' } },
+  { path: '/projects', component: () => import('./pages/ProjectList.vue'), },
+  { path: '/projects/new', component: () => import('./pages/ProjectNew.vue'), },
   {
     path: '/projects/:pid',
     component: () => import('./pages/ProjectLayout.vue'),

@@ -16,9 +16,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Vue 全家桶单独打包（页面代码改了，浏览器仍能用缓存）；Element Plus 组件跟着用到它的页面拆分
+        // Vue 全家桶（含 vue-i18n）单独打包（页面代码改了，浏览器仍能用缓存）；Element Plus 组件跟着用到它的页面拆分
         manualChunks(id) {
-          if (/node_modules\/(@vue|vue|vue-router)\//.test(id)) return 'vue'
+          if (/node_modules\/(@vue|vue|vue-router|vue-i18n|@intlify)\//.test(id)) return 'vue'
         },
       },
     },

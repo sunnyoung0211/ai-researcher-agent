@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, provide, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import StateTag from '../components/StateTag.vue'
 import { currentProject } from '../utils/currentProject'
+import { useI18n } from 'vue-i18n'
 import { getProject } from '../api/projects'
 import { subscribeProject } from '../api/stream'
 import { errorMessage } from '../api/client'
@@ -11,6 +12,7 @@ import { errorMessage } from '../api/client'
 // SSE 断开时显示灰色提示，并退化为每 10 秒轮询（详细设计 5 第 5.3 节）。
 const props = defineProps({ pid: { type: String, required: true } })
 const route = useRoute()
+const { t, locale } = useI18n()
 
 const status = ref(null)
 const loadError = ref(null)
@@ -41,10 +43,11 @@ function stopPolling() {
   pollTimer = null
 }
 
-function connect() {
+// keep：换语言时保留现有数据（不闪一下空白），只重新取一次
+function connect(keep = false) {
   unsubscribe()
   stopPolling()
-  status.value = null
+  if (keep !== true) status.value = null
   refresh()
   unsubscribe = subscribeProject(props.pid, {
     onMessage(type, data) {
@@ -71,6 +74,10 @@ function connect() {
   })
 }
 watch(() => props.pid, connect, { immediate: true })
+// 换语言：后台的状态说明、阻塞原因、问题正文要按新语言重新取；SSE 也带着新的 ?lang= 重连
+watch(locale, () => {
+  if (props.pid) connect(true)
+})
 onBeforeUnmount(() => {
   unsubscribe()
   stopPolling()
@@ -95,11 +102,11 @@ const isOverview = computed(() => (route.meta.menu || 'overview') === 'overview'
       <span class="meta">{{ status.stage_label }}</span>
     </div>
     <el-alert v-if="!connected" type="info" :closable="false" show-icon class="conn"
-      title="与后台的连接已断开，正在重连……（期间每 10 秒自动刷新一次）" />
-    <el-result v-if="loadError" icon="error" title="打不开这个项目" :sub-title="errorMessage(loadError)">
+      :title="t('layout.disconnected')" />
+    <el-result v-if="loadError" icon="error" :title="t('layout.cannotOpen')" :sub-title="errorMessage(loadError)">
       <template #extra>
-        <el-button type="primary" @click="refresh">重试</el-button>
-        <router-link to="/projects"><el-button>返回项目列表</el-button></router-link>
+        <el-button type="primary" @click="refresh">{{ t('common.retry') }}</el-button>
+        <router-link to="/projects"><el-button>{{ t('layout.backToList') }}</el-button></router-link>
       </template>
     </el-result>
     <router-view v-else :key="pid" />

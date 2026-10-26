@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { splitFrontmatter } from '../utils/format'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // 显示 Markdown；文件开头的 YAML 区块折叠显示为代码。reading：阅读模式（衬线字体、较宽行距、限制行宽）
 const props = defineProps({ source: { type: String, default: '' }, reading: { type: Boolean, default: false } })
@@ -13,7 +15,7 @@ const html = computed(() => md.render(parts.value.body))
 <template>
   <div class="markdown">
     <el-collapse v-if="parts.yaml" class="yaml">
-      <el-collapse-item title="结构化字段（YAML，给程序读的部分）" name="yaml">
+      <el-collapse-item :title="t('markdown.yaml')" name="yaml">
         <pre class="code mono">{{ parts.yaml }}</pre>
       </el-collapse-item>
     </el-collapse>

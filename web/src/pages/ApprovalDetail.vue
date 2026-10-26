@@ -15,6 +15,8 @@ import { artifactContent, editArtifact, readFile } from '../api/artifacts'
 import { pdfUrl } from '../api/paper'
 import { isConflict, newRequestId } from '../api/client'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // P5 审批详情（详细设计 5 第 4.5 节、第 6 节）。
 // 防重复：打开时生成一个 request_id，提交中再点无效；409（已过期 / 已被处理）时提示并刷新。
@@ -94,7 +96,7 @@ async function openExtra(e) {
     const r = await artifactContent(pid.value, e.artifact_id, e.version)
     drawer.content = typeof r === 'string' ? r : r.content ?? JSON.stringify(r, null, 2)
   } catch {
-    drawer.content = '（无法读取这个文件）'
+    drawer.content = t('approval.readFailed')
   } finally {
     drawer.loading = false
   }
@@ -103,18 +105,17 @@ async function openExtra(e) {
 // ---------------------------------------------------------------- 决策
 const comment = ref('')
 const submitting = ref('')
-const DECISION_TEXT = { approved: '已批准', changes_requested: '已退回修改，系统会按你的意见生成新版本', rejected: '已拒绝' }
 
 async function submit(decision) {
   if (submitting.value) return // 提交中再点无效
   const needComment = decision !== 'approved' || blockers.value > 0
   if (needComment && !comment.value.trim()) {
-    ElMessage.warning(decision === 'approved' ? `仍有 ${blockers.value} 个阻断问题，批准时必须填写意见` : '请填写意见，说明需要怎么改 / 为什么拒绝')
+    ElMessage.warning(decision === 'approved' ? t('approval.needCommentBlocker', { n: blockers.value }) : t('approval.needComment'))
     return
   }
   if (decision === 'rejected') {
     try {
-      await ElMessageBox.confirm('拒绝后系统会问你“重写还是结束项目”。确定拒绝吗？', '拒绝', { type: 'warning', confirmButtonText: '确定拒绝', cancelButtonText: '取消' })
+      await ElMessageBox.confirm(t('approval.rejectConfirm'), t('approval.reject'), { type: 'warning', confirmButtonText: t('approval.rejectOk'), cancelButtonText: t('common.cancel') })
     } catch {
       return
     }
@@ -127,12 +128,12 @@ async function submit(decision) {
       expected_sha256: a.value.target.sha256, // 告诉后台“我审的是这个版本”
       request_id: requestId, // 网络重试时沿用同一个，后台只处理一次
     })
-    ElMessage.success(DECISION_TEXT[decision])
+    ElMessage.success(t(`approval.done.${decision}`))
     ctx.refresh()
     router.push(`/projects/${pid.value}`)
   } catch (err) {
     if (isConflict(err)) {
-      ElMessage.warning('该版本已过期或已被处理，已刷新为最新状态')
+      ElMessage.warning(t('approval.stale'))
       requestId = newRequestId()
       await load()
       ctx.refresh()
@@ -159,12 +160,12 @@ async function saveEdit() {
       base_sha256: a.value.target.sha256,
       request_id: edit.requestId,
     })
-    ElMessage.success(`已保存为人工编辑的新版本 v${r.version ?? ''}`)
+    ElMessage.success(t('approval.editSaved', { v: r.version ?? '' }))
     edit.open = false
     await load()
     ctx.refresh()
   } catch (err) {
-    if (isConflict(err)) ElMessage.warning('文件已被修改，请刷新后再编辑')
+    if (isConflict(err)) ElMessage.warning(t('approval.editStale'))
   } finally {
     edit.saving = false
   }
@@ -174,22 +175,22 @@ async function saveEdit() {
 <template>
   <PageState :loading="loading && !data" :error="error" @retry="load()">
     <div v-if="a">
-      <router-link :to="`/projects/${pid}/approvals`" class="back"><el-icon><ArrowLeft /></el-icon>审批列表</router-link>
+      <router-link :to="`/projects/${pid}/approvals`" class="back"><el-icon><ArrowLeft /></el-icon>{{ t('approval.backToList') }}</router-link>
       <div class="page-title">
         <h2>{{ a.summary }}</h2>
       </div>
       <div class="sub">
         <StateTag kind="kind" :value="a.kind" size="small" />
         <StateTag kind="approval" :value="a.status" size="small" />
-        <span class="meta"><span class="mono">{{ a.approval_id }}</span> · <span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span> · 提交于 <TimeText :value="a.created_at" /></span>
+        <span class="meta"><span class="mono">{{ a.approval_id }}</span> · <span class="mono">{{ a.target.artifact_id }} v{{ a.target.version }}</span> · {{ t('approval.submittedAt') }} <TimeText :value="a.created_at" /></span>
       </div>
 
       <el-alert v-if="!isPending" :type="a.status === 'approved' ? 'success' : 'info'" :closable="false" show-icon class="mb">
         <template #title>
-          这个审批已处理：<StateTag kind="approval" :value="a.status" size="small" />
+          {{ t('approval.handled') }}<StateTag kind="approval" :value="a.status" size="small" />
           <span v-if="a.decided_at">（<TimeText :value="a.decided_at" />，{{ a.decided_by || '—' }}）</span>
-          <span v-if="a.decision_comment">意见：{{ a.decision_comment }}</span>
-          <router-link :to="`/projects/${pid}`" class="ml">回到总览</router-link>
+          <span v-if="a.decision_comment">{{ t('approval.comment') }}{{ a.decision_comment }}</span>
+          <router-link :to="`/projects/${pid}`" class="ml">{{ t('approval.backToOverview') }}</router-link>
         </template>
       </el-alert>
 
@@ -199,24 +200,24 @@ async function saveEdit() {
           <div class="content-bar">
             <CopyText :text="data.target_path" class="meta path" />
             <span class="spacer" />
-            <el-switch v-if="canDiff" v-model="showDiff" :active-text="`与 v${prev.version} 对比`" />
-            <el-button v-if="canEdit" size="small" icon="Edit" text @click="openEdit">编辑</el-button>
+            <el-switch v-if="canDiff" v-model="showDiff" :active-text="t('approval.diffWith', { v: prev.version })" />
+            <el-button v-if="canEdit" size="small" icon="Edit" text @click="openEdit">{{ t('approval.edit') }}</el-button>
           </div>
           <div class="paper">
             <template v-if="isManuscript">
               <PdfViewer v-if="pdfRef" :src="pdfUrl(pid, pdfRef.version)" height="72vh" />
-              <el-alert v-else type="info" :closable="false" title="这一版没有 PDF" />
+              <el-alert v-else type="info" :closable="false" :title="t('approval.noPdf')" />
               <div v-if="review" class="review">
-                <h3 class="section-title">核验报告摘要</h3>
+                <h3 class="section-title">{{ t('approval.reviewSummary') }}</h3>
                 <div class="counts">
-                  <el-tag type="danger">阻断 {{ review.counts?.blocker || 0 }}</el-tag>
-                  <el-tag type="warning">重要 {{ review.counts?.major || 0 }}</el-tag>
-                  <el-tag type="info">次要 {{ review.counts?.minor || 0 }}</el-tag>
-                  <el-tag :type="review.compile_ok ? 'success' : 'danger'">{{ review.compile_ok ? '编译成功' : '编译失败' }}</el-tag>
-                  <router-link :to="`/projects/${pid}/paper`" class="ml">在“论文”页查看每条论断 →</router-link>
+                  <el-tag type="danger">{{ t('approval.blocker', { n: review.counts?.blocker || 0 }) }}</el-tag>
+                  <el-tag type="warning">{{ t('approval.major', { n: review.counts?.major || 0 }) }}</el-tag>
+                  <el-tag type="info">{{ t('approval.minor', { n: review.counts?.minor || 0 }) }}</el-tag>
+                  <el-tag :type="review.compile_ok ? 'success' : 'danger'">{{ review.compile_ok ? t('approval.compileOk') : t('approval.compileFailed') }}</el-tag>
+                  <router-link :to="`/projects/${pid}/paper`" class="ml">{{ t('approval.seeClaims') }}</router-link>
                 </div>
                 <el-collapse v-if="reviewMd" class="mt">
-                  <el-collapse-item title="核验报告全文" name="r"><MarkdownView :source="reviewMd" reading /></el-collapse-item>
+                  <el-collapse-item :title="t('approval.reviewFull')" name="r"><MarkdownView :source="reviewMd" reading /></el-collapse-item>
                 </el-collapse>
               </div>
             </template>
@@ -224,20 +225,20 @@ async function saveEdit() {
               <DiffView v-if="showDiff && canDiff" :old-text="prev.content" :new-text="data.target_content" />
               <MarkdownView v-else :source="data.target_content" reading />
             </template>
-            <el-alert v-else type="info" :closable="false" title="这个对象不是文本文件，请查看右侧的相关材料" />
+            <el-alert v-else type="info" :closable="false" :title="t('approval.notText')" />
           </div>
         </section>
 
         <!-- 右：决策区（一个面板，用分隔线分成几块） -->
         <aside class="side">
           <div class="block">
-            <div class="label">影响范围</div>
+            <div class="label">{{ t('approval.impact') }}</div>
             <p class="p">{{ a.impact || '—' }}</p>
-            <div v-if="a.previous" class="meta">上一个获批版本：v{{ a.previous.version }}</div>
+            <div v-if="a.previous" class="meta">{{ t('approval.previousApproved', { v: a.previous.version }) }}</div>
           </div>
 
           <div v-if="data.extra.length" class="block">
-            <div class="label">相关材料</div>
+            <div class="label">{{ t('approval.extra') }}</div>
             <div v-for="e in data.extra" :key="e.artifact_id" class="extra" @click="openExtra(e)">
               <el-icon><Document /></el-icon>
               <span class="mono name">{{ e.artifact_id }}</span>
@@ -246,17 +247,17 @@ async function saveEdit() {
           </div>
 
           <div v-if="isPending" class="block">
-            <div class="label">你的决定</div>
+            <div class="label">{{ t('approval.decision') }}</div>
             <div v-if="blockers" class="blocker">
               <el-icon><Warning /></el-icon>
-              <div><b>仍有 {{ blockers }} 个阻断问题</b><div class="meta">批准时必须填写意见（例如为什么可以接受）。</div></div>
+              <div><b>{{ t('approval.blockersLeft', { n: blockers }) }}</b><div class="meta">{{ t('approval.blockersHint') }}</div></div>
             </div>
             <el-input v-model="comment" type="textarea" :rows="4" resize="none"
-              placeholder="意见：退回修改和拒绝时必填，批准时可选" />
-            <el-button type="primary" class="approve" icon="Check" :loading="submitting === 'approved'" :disabled="!!submitting && submitting !== 'approved'" @click="submit('approved')">批准</el-button>
+              :placeholder="t('approval.commentPh')" />
+            <el-button type="primary" class="approve" icon="Check" :loading="submitting === 'approved'" :disabled="!!submitting && submitting !== 'approved'" @click="submit('approved')">{{ t('approval.approve') }}</el-button>
             <div class="secondary">
-              <el-button icon="RefreshLeft" :loading="submitting === 'changes_requested'" :disabled="!!submitting && submitting !== 'changes_requested'" @click="submit('changes_requested')">退回修改</el-button>
-              <el-button type="danger" text icon="Close" :loading="submitting === 'rejected'" :disabled="!!submitting && submitting !== 'rejected'" @click="submit('rejected')">拒绝</el-button>
+              <el-button icon="RefreshLeft" :loading="submitting === 'changes_requested'" :disabled="!!submitting && submitting !== 'changes_requested'" @click="submit('changes_requested')">{{ t('approval.requestChanges') }}</el-button>
+              <el-button type="danger" text icon="Close" :loading="submitting === 'rejected'" :disabled="!!submitting && submitting !== 'rejected'" @click="submit('rejected')">{{ t('approval.reject') }}</el-button>
             </div>
           </div>
         </aside>
@@ -267,12 +268,12 @@ async function saveEdit() {
         <div v-else v-loading="drawer.loading"><ContentView :name="drawer.name" :content="drawer.content" /></div>
       </el-drawer>
 
-      <el-dialog v-model="edit.open" :title="`编辑 ${a.target.artifact_id}`" width="80%" top="5vh">
-        <el-alert type="info" :closable="false" show-icon class="mb" title="保存后登记为“人工编辑”的新版本；系统会用新版本重新提交审批。" />
+      <el-dialog v-model="edit.open" :title="t('approval.editTitle', { path: a.target.artifact_id })" width="80%" top="5vh">
+        <el-alert type="info" :closable="false" show-icon class="mb" :title="t('approval.editHint')" />
         <el-input v-model="edit.text" type="textarea" :rows="24" class="mono" />
         <template #footer>
-          <el-button @click="edit.open = false">取消</el-button>
-          <el-button type="primary" :loading="edit.saving" @click="saveEdit">保存</el-button>
+          <el-button @click="edit.open = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="edit.saving" @click="saveEdit">{{ t('common.save') }}</el-button>
         </template>
       </el-dialog>
     </div>
