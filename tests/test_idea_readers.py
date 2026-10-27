@@ -204,8 +204,10 @@ def test_no_text_does_not_call_model_or_fabricate_card(air_home):
     drive(engine, S.Paused)
     assert not cards(project) and not engine.llm.backend.calls
     report = json.loads((project.root / "idea/reading_status.json").read_text(encoding="utf-8"))
-    assert len(report["failed"]) == 1
-    assert project.questions.pending() and report["status_counts"].get("pending") == 1
+    assert len(report["failed"]) == 2
+    assert all(t["attempts"] == 0 and t["retryable"] is False for t in report["failed"])
+    assert {o.id for o in project.questions.pending().options} == {"end"}
+    assert project.questions.pending() and report["status_counts"] == {"failed": 2}
 
 
 def test_gap_unknown_evidence_is_rejected(air_home):
