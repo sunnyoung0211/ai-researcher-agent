@@ -61,11 +61,13 @@ class Events:
         after_seq: int = 0,
         limit: int = 200,
         tail: int | None = None,
+        before_seq: int | None = None,
     ) -> list[Event]:
         """按条件查事件，按 seq 正序返回。
 
         默认从 after_seq 之后往后取前 limit 条；给了 tail 时改为取符合条件的最后 tail 条
         （从文件末尾往前读，读够就停，不扫全量），此时忽略 limit。
+        before_seq 只要 seq 小于它的事件；和 tail 一起用可以从新到旧一页页往前翻（网页事件日志）。
         """
         # 本期没有 SQLite 索引（见详细设计 1 第 3.9 节的说明）：直接顺序扫描文件，几千条以内足够快
         def ok(raw: dict) -> bool:
@@ -82,10 +84,14 @@ class Events:
             for raw in iter_jsonl_reverse(self.path):
                 if len(out) >= tail or raw.get("seq", 0) <= after_seq:  # seq 单调递增，再往前都更旧
                     break
+                if before_seq is not None and raw.get("seq", 0) >= before_seq:
+                    continue
                 if ok(raw):
                     out.append(Event.model_validate(raw))
             return out[::-1]
         for raw in read_jsonl(self.path):
+            if before_seq is not None and raw.get("seq", 0) >= before_seq:
+                break
             if raw.get("seq", 0) <= after_seq or not ok(raw):
                 continue
             out.append(Event.model_validate(raw))

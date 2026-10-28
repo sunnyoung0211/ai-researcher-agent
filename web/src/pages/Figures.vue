@@ -49,7 +49,7 @@ const image = (f) => f.outputs.find((o) => /\.(png|svg|jpe?g)$/i.test(o)) || f.o
       </div>
     </PageState>
 
-    <el-drawer v-model="drawerOpen" :title="current ? `${current.fig_id}：${current.spec.title}` : ''" size="60%">
+    <el-drawer v-model="drawerOpen" :title="current ? t('figures.drawerTitle', { id: current.fig_id, title: current.spec.title }) : ''" size="60%">
       <div v-if="current">
         <FileImage :pid="pid" :path="image(current)" />
         <p>{{ current.spec.caption }}</p>

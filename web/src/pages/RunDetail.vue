@@ -121,7 +121,7 @@ async function saveLabel() {
               <span v-if="rec.repair_attempt" class="muted">{{ t('run.repairAttempt', { n: rec.repair_attempt }) }}</span>
             </el-descriptions-item>
             <el-descriptions-item v-if="rec.inputs?.length" :label="t('run.inputs')">
-              <div v-for="i in rec.inputs" :key="i.name" class="mono small">{{ i.name }}：{{ i.path }}（{{ i.sha256.slice(0, 10) }}…）</div>
+              <div v-for="i in rec.inputs" :key="i.name" class="mono small">{{ t('run.inputItem', { name: i.name, path: i.path, sha: i.sha256.slice(0, 10) }) }}</div>
             </el-descriptions-item>
           </el-descriptions>
         </el-card>

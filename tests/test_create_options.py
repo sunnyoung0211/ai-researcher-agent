@@ -122,10 +122,16 @@ def test_events_tail(client):
     assert [e.summary for e in odd] == ["第 25 条事件", "第 27 条事件", "第 29 条事件"]
     assert [e.seq for e in ev.query(tail=100, after_seq=last - 2)] == [last - 1, last]
     assert len(ev.query(tail=1000)) == last  # 不够 N 条时返回全部
+    # before_seq：从新到旧往前翻页
+    assert [e.seq for e in ev.query(tail=3, before_seq=last - 1)] == [last - 4, last - 3, last - 2]
+    assert [e.summary for e in ev.query(types=["test.odd"], tail=2, before_seq=last)] == ["第 25 条事件", "第 27 条事件"]
+    assert [e.seq for e in ev.query(after_seq=last - 5, before_seq=last - 2)] == [last - 4, last - 3]
 
     r = client.get(f"/api/projects/{pid}/events", params={"tail": 3, "type": "test.*"})
     assert [e["summary"] for e in r.json()] == ["第 27 条事件", "第 28 条事件", "第 29 条事件"]
     assert client.get(f"/api/projects/{pid}/events", params={"tail": 0}).status_code == 422
+    r = client.get(f"/api/projects/{pid}/events", params={"tail": 2, "before_seq": last})
+    assert [e["seq"] for e in r.json()] == [last - 2, last - 1]
 
 
 def test_iter_jsonl_reverse_chunks_and_bad_lines(tmp_path):

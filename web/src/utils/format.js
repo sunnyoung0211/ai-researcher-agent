@@ -1,7 +1,8 @@
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { ElMessage } from 'element-plus'
-import { t } from '../i18n'
+import { lang, t } from '../i18n'
+import { BUDGET, label } from '../constants/labels'
 
 export { getPref, setPref } from './prefs'
 
@@ -24,6 +25,13 @@ export function num(v, digits = 4) {
   if (typeof v !== 'number') return String(v)
   if (Number.isInteger(v)) return String(v)
   return String(Number(v.toFixed(digits)))
+}
+
+// 预算表单（新建项目、调整上限）：“提醒”不能大于“上限”
+export const softOverHard = (row) => row.soft != null && row.hard != null && row.soft > row.hard
+export function budgetError(rows) {
+  const bad = rows.filter(softOverHard).map((r) => label(BUDGET, r.name))
+  return bad.length ? t('budget.softOverHard', { list: bad.join(lang.value === 'en' ? ', ' : '、') }) : ''
 }
 
 export async function copyText(text) {

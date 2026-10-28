@@ -42,7 +42,7 @@ async function upload({ file }) {
 const checkItems = (c) => {
   if (!c) return []
   const by = c.entry_chosen_by === 'user' ? t('templates.byUser') : c.entry_chosen_by === 'auto' ? t('templates.byAuto') : ''
-  const missing = (c.missing || []).map((m) => (typeof m === 'string' ? m : `${m.name}${m.kind ? `（${m.kind}）` : ''}`))
+  const missing = (c.missing || []).map((m) => (typeof m === 'string' ? m : (m.kind ? t('templates.missingItem', { name: m.name, kind: m.kind }) : m.name)))
   return [
     [t('templates.entry'), c.entry ? c.entry + by : t('templates.entryUnknown', { list: (c.entry_candidates || []).join(', ') || t('common.none') })],
     [t('templates.missing'), missing.length ? missing.join(', ') : t('common.none')],
@@ -94,7 +94,7 @@ const checkItems = (c) => {
           <el-table-column :label="t('templates.colCheck')" min-width="260">
             <template #default="{ row }">
               <span v-if="!row.check" class="muted">{{ t('templates.notChecked') }}</span>
-              <div v-for="[k, v] in checkItems(row.check)" v-else :key="k"><span class="muted">{{ k }}：</span>{{ v }}</div>
+              <div v-for="[k, v] in checkItems(row.check)" v-else :key="k"><span class="muted">{{ t('common.labelColon', { label: k }) }}</span>{{ v }}</div>
               <el-popover v-if="row.check" trigger="click" width="420">
                 <template #reference><el-button link size="small" type="primary">{{ t('templates.raw') }}</el-button></template>
                 <pre class="code mono">{{ JSON.stringify(row.check, null, 2) }}</pre>
