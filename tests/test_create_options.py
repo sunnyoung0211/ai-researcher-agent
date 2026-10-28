@@ -124,7 +124,8 @@ def test_events_tail(client):
     assert len(ev.query(tail=1000)) == last  # 不够 N 条时返回全部
     # before_seq：从新到旧往前翻页
     assert [e.seq for e in ev.query(tail=3, before_seq=last - 1)] == [last - 4, last - 3, last - 2]
-    assert [e.summary for e in ev.query(types=["test.odd"], tail=2, before_seq=last)] == ["第 25 条事件", "第 27 条事件"]
+    odd_before = ev.query(types=["test.odd"], tail=2, before_seq=last)
+    assert [e.summary for e in odd_before] == ["第 25 条事件", "第 27 条事件"]
     assert [e.seq for e in ev.query(after_seq=last - 5, before_seq=last - 2)] == [last - 4, last - 3]
 
     r = client.get(f"/api/projects/{pid}/events", params={"tail": 3, "type": "test.*"})
