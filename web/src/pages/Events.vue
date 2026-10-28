@@ -8,7 +8,7 @@ import { useProject, useProjectRefresh } from '../utils/useLoader'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
-// P13 事件日志：按类型筛选、按关键词搜索，滚动到底部加载更多（after_seq 分页，从旧到新）
+// P13 事件日志：按类型筛选、按关键词搜索；新的在上，滚动到底部加载更早的（tail + before_seq 分页）
 const { pid } = useProject()
 const PAGE = 100
 const TYPES = ['state', 'approval', 'question', 'run', 'artifact', 'stage', 'project', 'budget', 'literature', 'template', 'permission', 'engine']
@@ -18,8 +18,8 @@ const loading = ref(false)
 const more = ref(true)
 const error = ref(null)
 
-function params(after) {
-  return { after_seq: after, limit: PAGE, type: filter.types.join(',') || undefined, q: filter.q.trim() || undefined, run_id: filter.run_id.trim() || undefined }
+function params(extra) {
+  return { ...extra, type: filter.types.join(',') || undefined, q: filter.q.trim() || undefined, run_id: filter.run_id.trim() || undefined }
 }
 async function reset() {
   rows.value = []
@@ -31,9 +31,9 @@ async function loadMore() {
   if (loading.value || !more.value) return
   loading.value = true
   try {
-    const after = rows.value.length ? rows.value[rows.value.length - 1].seq : 0
-    const got = await listEvents(pid.value, params(after))
-    rows.value.push(...got)
+    const before = rows.value.length ? rows.value[rows.value.length - 1].seq : undefined
+    const got = await listEvents(pid.value, params({ tail: PAGE, before_seq: before }))
+    rows.value.push(...got.reverse())
     more.value = got.length === PAGE
   } catch (e) {
     error.value = e
@@ -42,8 +42,24 @@ async function loadMore() {
   }
 }
 onMounted(reset)
-// 有新事件时，如果已经加载到最后，把新的接上
-useProjectRefresh(() => { if (!more.value) { more.value = true; loadMore() } }, ['event'])
+// 有新事件时把比最上面一条更新的接到顶部
+let fetchingNew = false
+async function loadNew() {
+  if (fetchingNew || loading.value || !rows.value.length) return
+  fetchingNew = true
+  try {
+    for (;;) {
+      const got = await listEvents(pid.value, params({ after_seq: rows.value[0].seq, limit: 500 }))
+      rows.value.unshift(...got.reverse())
+      if (got.length < 500) break
+    }
+  } catch {
+    /* 下次有新事件再接 */
+  } finally {
+    fetchingNew = false
+  }
+}
+useProjectRefresh(() => (rows.value.length ? loadNew() : reset()), ['event'])
 
 const color = (t) => (t.includes('fail') || t.includes('error') ? 'danger' : t.startsWith('approval') ? 'warning' : t.startsWith('run') ? 'primary' : t.startsWith('state') ? 'success' : '')
 const expanded = ref({})

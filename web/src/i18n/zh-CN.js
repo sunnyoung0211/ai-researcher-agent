@@ -21,6 +21,7 @@ export default {
     details: '详情',
     collapse: '收起',
     download: '下载',
+    labelColon: '{label}：',
   },
   time: {
     seconds: '{n} 秒',
@@ -32,12 +33,12 @@ export default {
     offline: '无法连接后台，请确认 air serve 已启动',
   },
   mock: {
-    readonly: '假数据模式下不能提交操作（请启动 air serve 并用 npm run dev）',
-    notFound: '假数据中没有 {path}',
+    readonly: '样例数据模式下不能提交操作（请启动 air serve 并用 npm run dev）',
+    notFound: '样例数据中没有 {path}',
   },
   app: {
     offline: '连不上后台：请在终端运行 air serve（保持窗口开着），页面会自动恢复',
-    mockBanner: '假数据模式：显示的是样例数据，不能提交操作',
+    mockBanner: '样例数据模式：不能提交操作',
   },
   nav: {
     newProject: '新建项目',
@@ -94,12 +95,12 @@ export default {
     fTaskPh: '选择任务',
     fTaskRequired: '请选择任务配置',
     fMode: '运行模式',
-    modeFake: '演示（假实现，不调用大模型，不花钱）',
+    modeFake: '演示（不调用大模型，不花钱）',
     modeReal: '真实运行',
     realStages: '这些阶段会真的调用大模型（需要先在 ~/air/.env 配好 Key，会产生费用）：',
-    realRest: '；其余阶段仍用假实现。',
+    realRest: '；其余阶段按演示方式运行。',
     allowLocal: '允许在本机真的跑训练',
-    allowLocalHint: '不勾选时实验只做模拟；勾选后会占用本机的 CPU / GPU。',
+    allowLocalHint: '不勾选时不会在本机跑训练；勾选后会占用本机的 CPU / GPU。',
     noReal: '还没有阶段完成真实实现，暂时只能用演示模式。',
     fBudget: '预算',
     colCategory: '类别',
@@ -120,6 +121,11 @@ export default {
     submit: '创建并开始',
     created: '项目已创建，系统开始选题',
     templateFailed: '项目已创建，但模板上传失败；可以稍后在“模板”页重新上传',
+    realConfirmTitle: '确认真实运行',
+    realConfirm: '真实运行会调用大模型、产生费用。大模型费用上限为 {usd} 美元，到上限后项目会自动暂停。',
+    realConfirmNoLimit: '真实运行会调用大模型、产生费用，而且没有设置大模型费用上限。',
+    realConfirmLocal: '你还勾选了“允许在本机真的跑训练”，实验会占用本机的 CPU / GPU。',
+    realConfirmOk: '确认创建',
   },
   overview: {
     resume: '继续',
@@ -206,6 +212,7 @@ export default {
     submittedAt: '提交于',
     handled: '这个审批已处理：',
     comment: '意见：',
+    decidedAt: '（{time}，{by}）',
     backToOverview: '回到总览',
     diffWith: '与 v{v} 对比',
     edit: '编辑',
@@ -284,6 +291,7 @@ export default {
     retryOf: '重试自',
     repairAttempt: '（第 {n} 次修复）',
     inputs: '输入数据',
+    inputItem: '{name}：{path}（{sha}…）',
     status: '状态',
     created: '创建',
     started: '开始',
@@ -385,6 +393,7 @@ export default {
     viewAggregate: '查看汇总文件',
     inputRuns: '输入运行（{n}）',
     outputs: '输出文件',
+    drawerTitle: '{id}：{title}',
   },
   paper: {
     title: '论文与论断',
@@ -494,6 +503,7 @@ export default {
     byAuto: '（自动识别）',
     entryUnknown: '未确定（候选：{list}）',
     missing: '缺失的依赖',
+    missingItem: '{name}（{kind}）',
     compile: '最小编译',
     ok: '成功',
     failed: '失败',
@@ -501,6 +511,7 @@ export default {
   budget: {
     unlimited: '不限',
     remind: '（提醒 {n}）',
+    softOverHard: '“提醒”不能大于“上限”：{list}',
   },
   // 枚举值的显示文字（constants/labels.js）
   labels: {

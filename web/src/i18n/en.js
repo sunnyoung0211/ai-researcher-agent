@@ -21,6 +21,7 @@ export default {
     details: 'Details',
     collapse: 'Hide',
     download: 'Download',
+    labelColon: '{label}: ',
   },
   time: {
     seconds: '{n}s',
@@ -32,12 +33,12 @@ export default {
     offline: 'Cannot reach the server — make sure air serve is running',
   },
   mock: {
-    readonly: 'Actions are disabled in mock-data mode (start air serve and use npm run dev)',
-    notFound: 'No mock data for {path}',
+    readonly: 'Actions are disabled in sample-data mode (start air serve and use npm run dev)',
+    notFound: 'No sample data for {path}',
   },
   app: {
     offline: 'Cannot reach the server: run air serve in a terminal and keep it open. This page will recover automatically.',
-    mockBanner: 'Mock-data mode: showing sample data; actions are disabled',
+    mockBanner: 'Sample-data mode: actions are disabled',
   },
   nav: {
     newProject: 'New project',
@@ -94,12 +95,12 @@ export default {
     fTaskPh: 'Choose a task',
     fTaskRequired: 'Please choose a task',
     fMode: 'Run mode',
-    modeFake: 'Demo (fake stages, no LLM calls, free)',
+    modeFake: 'Demo (no LLM calls, free)',
     modeReal: 'Real',
     realStages: 'These stages will call real LLMs (set your keys in ~/air/.env first; this costs money):',
-    realRest: '. Other stages still use the fake implementation.',
+    realRest: '. Other stages run in demo mode.',
     allowLocal: 'Allow real training runs on this machine',
-    allowLocalHint: 'If unchecked, experiments are only simulated; if checked they will use this machine’s CPU / GPU.',
+    allowLocalHint: 'If unchecked, nothing is trained on this machine; if checked, experiments will use its CPU / GPU.',
     noReal: 'No stage has a real implementation yet, so only demo mode is available.',
     fBudget: 'Budget',
     colCategory: 'Category',
@@ -120,6 +121,11 @@ export default {
     submit: 'Create and start',
     created: 'Project created — selecting a research idea now',
     templateFailed: 'Project created, but the template upload failed; you can upload it again on the Templates page',
+    realConfirmTitle: 'Start a real run?',
+    realConfirm: 'A real run calls LLMs and costs money. The LLM cost limit is {usd} USD; the project pauses when it is reached.',
+    realConfirmNoLimit: 'A real run calls LLMs and costs money, and no LLM cost limit is set.',
+    realConfirmLocal: 'You also allowed real training runs on this machine; experiments will use its CPU / GPU.',
+    realConfirmOk: 'Create real run',
   },
   overview: {
     resume: 'Resume',
@@ -205,7 +211,8 @@ export default {
     backToList: 'Approvals',
     submittedAt: 'submitted',
     handled: 'This approval has been handled:',
-    comment: 'Comment:',
+    comment: 'Comment: ',
+    decidedAt: ' ({time}, {by}) ',
     backToOverview: 'Back to overview',
     diffWith: 'Compare with v{v}',
     edit: 'Edit',
@@ -284,6 +291,7 @@ export default {
     retryOf: 'Retry of',
     repairAttempt: ' (repair attempt {n})',
     inputs: 'Inputs',
+    inputItem: '{name}: {path} ({sha}…)',
     status: 'Status',
     created: 'Created',
     started: 'Started',
@@ -385,6 +393,7 @@ export default {
     viewAggregate: 'View aggregate file',
     inputRuns: 'Input runs ({n})',
     outputs: 'Output files',
+    drawerTitle: '{id}: {title}',
   },
   paper: {
     title: 'Paper & claims',
@@ -519,6 +528,7 @@ export default {
     byAuto: ' (detected)',
     entryUnknown: 'Undecided (candidates: {list})',
     missing: 'Missing dependencies',
+    missingItem: '{name} ({kind})',
     compile: 'Minimal compile',
     ok: 'Succeeded',
     failed: 'Failed',
@@ -526,6 +536,7 @@ export default {
   budget: {
     unlimited: 'unlimited',
     remind: ' (warn at {n})',
+    softOverHard: '“Warn at” can’t be higher than “Limit”: {list}',
   },
   labels: {
     state: {

@@ -1,10 +1,11 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { createProject, getDefaults, listTasks, uploadTemplate } from '../api/projects'
 import { newRequestId } from '../api/client'
 import { BUDGET, STAGE, label } from '../constants/labels'
+import { budgetError, softOverHard } from '../utils/format'
 import { useI18n } from 'vue-i18n'
 const { t, locale } = useI18n()
 
@@ -72,6 +73,20 @@ function onFile(file) {
   return false
 }
 
+// 真实运行会花钱：创建前再确认一次，写明大模型费用上限；勾了本机训练也一并提示
+async function confirmReal() {
+  const usd = budget.value.find((r) => r.name === 'llm_usd')?.hard
+  const lines = [usd != null ? t('newProject.realConfirm', { usd }) : t('newProject.realConfirmNoLimit')]
+  if (form.allow_local_execution) lines.push(t('newProject.realConfirmLocal'))
+  try {
+    await ElMessageBox.confirm(h('div', lines.map((x) => h('p', x))), t('newProject.realConfirmTitle'),
+      { type: 'warning', confirmButtonText: t('newProject.realConfirmOk'), cancelButtonText: t('common.cancel') })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function submit() {
   if (submitting.value) return
   try {
@@ -79,6 +94,12 @@ async function submit() {
   } catch {
     return
   }
+  const err = budgetError(budget.value)
+  if (err) {
+    ElMessage.error(err)
+    return
+  }
+  if (form.mode === 'real' && !(await confirmReal())) return
   submitting.value = true
   const constraints = Object.fromEntries(['compute', 'time', 'data'].filter((k) => form[k].trim()).map((k) => [k, form[k].trim()]))
   const dev = {}
@@ -166,10 +187,10 @@ async function submit() {
           <el-table :data="budget" size="small" class="budget">
             <el-table-column :label="t('newProject.colCategory')" min-width="160"><template #default="{ row }">{{ label(BUDGET, row.name) }}</template></el-table-column>
             <el-table-column :label="t('newProject.colSoft')" width="160">
-              <template #default="{ row }"><el-input-number v-model="row.soft" :min="0" size="small" controls-position="right" :value-on-clear="null" :placeholder="t('newProject.noSoft')" /></template>
+              <template #default="{ row }"><el-input-number :class="{ bad: softOverHard(row) }" v-model="row.soft" :min="0" size="small" controls-position="right" :value-on-clear="null" :placeholder="t('newProject.noSoft')" /></template>
             </el-table-column>
             <el-table-column :label="t('newProject.colHard')" width="160">
-              <template #default="{ row }"><el-input-number v-model="row.hard" :min="0" size="small" controls-position="right" :value-on-clear="null" :placeholder="t('newProject.noHard')" /></template>
+              <template #default="{ row }"><el-input-number :class="{ bad: softOverHard(row) }" v-model="row.hard" :min="0" size="small" controls-position="right" :value-on-clear="null" :placeholder="t('newProject.noHard')" /></template>
             </el-table-column>
           </el-table>
           <div class="muted small">{{ t('newProject.budgetHint') }}</div>
@@ -210,6 +231,7 @@ async function submit() {
 .stag { margin-left: 4px; }
 .small { font-size: 12px; }
 .budget { width: 100%; max-width: 520px; }
+.bad :deep(.el-input__wrapper) { box-shadow: 0 0 0 1px var(--el-color-danger) inset; }
 .gap { margin-left: 12px; }
 .adv { margin: 0 0 18px 0; }
 </style>
