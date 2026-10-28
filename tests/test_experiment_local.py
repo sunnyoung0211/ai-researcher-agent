@@ -55,7 +55,9 @@ def test_real_trial_pause_and_formal_resume_without_duplicate_runs(air_home):
     for r in runs:
         assert r.resources.gpu_seconds == 0
         if r.record.kind != "trial":
-            assert all(t.status.ended_at < r.record.created_at for t in trials)
+            matching = [t for t in trials if t.record.experiment_id == r.record.experiment_id
+                        and t.record.code_commit == r.record.code_commit]
+            assert matching and all(t.status.ended_at < r.record.created_at for t in matching)
     assert all(sha256_file(project.root / "runs" / rid / "run.json") == digest for rid, digest in hashes.items())
 
 

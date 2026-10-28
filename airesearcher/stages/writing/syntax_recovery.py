@@ -3,12 +3,70 @@
 from __future__ import annotations
 
 import copy
+import re
+from difflib import SequenceMatcher
 
 from airesearcher.core.fsutil import atomic_write_bytes, sha256_bytes
 
 from . import claims as binding
 from . import latex_syntax, recovery
+from ._latex import _is_escaped
 from .writer import SECTIONS, SectionOutput, _section_bytes
+
+
+class ClaimRepairRequired(ValueError):
+    """An exact frozen claim needs the bounded syntax-only model path."""
+
+    def __init__(self, claim, reason, key):
+        super().__init__(reason)
+        self.claim, self.key = claim, key
+
+
+_LITERAL_TEXT = {
+    r"\_": "_", r"\&": "&", r"\#": "#", r"\%": "%", r"\$": "$", r"\{": "{", r"\}": "}",
+    r"\textbackslash{}": "\\", r"\textasciicircum{}": "^", r"\textasciitilde{}": "~",
+    r"\(": "$", r"\)": "$", r"\[": "$", r"\]": "$",
+}
+_LITERAL_PATTERN = re.compile("|".join(re.escape(k) for k in sorted(_LITERAL_TEXT, key=len, reverse=True)))
+_EVIDENCE_CALL = re.compile(r"\\(?:airval|cite|ref|pageref|label|includegraphics)\s*"
+                            r"(?:\[[^\]]*\]\s*)?\{[^{}]*\}")
+
+
+def _literal_surface(text):
+    # Do not strip comments: recovering a raw percent must retain the original
+    # characters hidden behind it, rather than silently deleting frozen prose.
+    return _LITERAL_PATTERN.sub(
+        lambda m: _LITERAL_TEXT[m[0]] if not _is_escaped(text, m.start()) else m[0], text
+    )
+
+
+def validate_claim_repair(writer, claim, payload):
+    output = SectionOutput.model_validate(payload)
+    if output.section != claim.section:
+        raise ValueError("Syntax repair changed the claim's section; keep the supplied section")
+    text = latex_syntax.normalize(output.latex.rstrip("\r\n"), claim=True)
+    prefix = f"\\claim{{{claim.claim_id}}}{{"
+    if not text.startswith(prefix) or not text.endswith("}") or len(re.findall(r"\\claim\b", text)) != 1:
+        raise ValueError("Return exactly the original claim wrapper and claim ID, without surrounding prose")
+    before = claim.text.rstrip("\r\n")
+    if _EVIDENCE_CALL.findall(before) != _EVIDENCE_CALL.findall(text):
+        raise ValueError("Syntax repair changed frozen airval/citation/reference keys; copy all calls exactly")
+    source, candidate = _literal_surface(before), _literal_surface(text)
+    for kind, a, b, c, d in SequenceMatcher(a=source, b=candidate, autojunk=False).get_opcodes():
+        if kind == "equal":
+            continue
+        # Escape changes render the same literal characters. The only extra
+        # syntax allowed is missing math/group delimiters, never removed text,
+        # changed numbers, rewritten wording or newly computed evidence.
+        if kind != "insert" or not set(candidate[c:d]) <= {"$", "{", "}"}:
+            raise ValueError("Syntax-only repair changed original text, numbers, signs or units: "
+                             f"{source[a:b]!r} -> {candidate[c:d]!r}. "
+                             "Keep original characters; change only literal escapes or add missing delimiters")
+    updated = claim.model_copy(update={"text": text})
+    isolated = copy.copy(writer)
+    isolated.claims = [updated]
+    isolated.validate_section(SectionOutput(section=claim.section, latex=text), claim.section)
+    return updated
 
 
 def finish(ctx, state, meta, pending, load, save, path):
@@ -39,17 +97,32 @@ def finish(ctx, state, meta, pending, load, save, path):
     pending["done"] = True
     save(ctx, "syntax-repair-" + pending["id"], pending)
     save(ctx, "pending-syntax", pending)
-    ctx.log("Deterministic LaTeX literal escaping applied to generated Writing files; "
-            "claim evidence and numeric values unchanged; no model call: " + ", ".join(pending["files"]))
+    ctx.log("Validated LaTeX syntax repair applied to generated Writing files; "
+            "claim evidence and numeric values unchanged; installation made no additional model call: "
+            + ", ".join(pending["files"]))
 
 
 def repair_owned(ctx, state, meta, writer, load, save, path, hash_value):
     if state.get("phase") not in {"write", "compile", "compile_fix"}:
         return False
     old_claims = writer.claims
-    new_claims = None if old_claims is None else [
-        c.model_copy(update={"text": latex_syntax.normalize(c.text, claim=True)}) for c in old_claims
-    ]
+    new_claims = None if old_claims is None else []
+    assisted = []
+    for claim in old_claims or []:
+        try:
+            updated = claim.model_copy(update={"text": latex_syntax.normalize(claim.text, claim=True)})
+        except ValueError as exc:
+            source = claim.model_dump(mode="json", exclude={"location"})
+            key = hash_value([state["claim_basis"], source])
+            saved = load(ctx, "bound-syntax-" + key)
+            if not saved:
+                raise ClaimRepairRequired(claim, str(exc), key) from exc
+            if saved.get("source") != source:
+                raise ValueError("Bound syntax-repair receipt does not match the exact frozen claim") from exc
+            updated = validate_claim_repair(writer, claim, saved["response"])
+            assisted.append({"claim_id": claim.claim_id, "receipt": "bound-syntax-" + key,
+                             "call_id": saved.get("call_id")})
+        new_claims.append(updated)
     new_writer = copy.copy(writer)
     new_writer.claims = new_claims
     targets = {}
@@ -79,7 +152,13 @@ def repair_owned(ctx, state, meta, writer, load, save, path, hash_value):
             continue  # Normal factual/prompt invalidation owns regeneration.
         output = SectionOutput.model_validate(receipt["output"])
         original = target.read_bytes()
-        normalized = latex_syntax.normalize(output.latex)
+        prose = output.latex
+        for before, after in zip(old_claims or [], new_claims or [], strict=True):
+            if before.section == name and before.text != after.text:
+                if prose.count(before.text) != 1:
+                    raise ValueError("Cannot relocate exact original claim during syntax recovery: " + before.claim_id)
+                prose = prose.replace(before.text, after.text, 1)
+        normalized = latex_syntax.normalize(prose)
         claim_changed = any(a.text != b.text for a, b in zip(old_claims or [], new_claims or [], strict=True)
                             if a.section == name)
         if normalized == output.latex and not claim_changed:
@@ -88,7 +167,7 @@ def repair_owned(ctx, state, meta, writer, load, save, path, hash_value):
                 or original != _section_bytes(output)):
             raise recovery.ReconcileRequired("syntax repair intersects an edited section; preserve edits",
                                             {f"paper/sections/{name}.tex": _section_bytes(output)})
-        if old_claims is not None:
+        if old_claims is not None and not assisted:
             binding.validate_bound_section(output.latex, old_claims, name)
         repaired = output.model_copy(update={"latex": normalized})
         new_writer.validate_section(repaired, name)
@@ -114,7 +193,8 @@ def repair_owned(ctx, state, meta, writer, load, save, path, hash_value):
     if not targets:
         return False
     pending = {"id": hash_value(targets), "files": targets, "done": False,
-               "description": "Only deterministic literal escaping; original bytes retained below"}
+               "model_claim_repairs": assisted,
+               "description": "Syntax-only repair; original bytes and model-repair provenance retained below"}
     # Save all original bytes and all validated replacements before changing any
     # file, so interruption cannot leave claims and sections permanently out of sync.
     save(ctx, "pending-syntax", pending)

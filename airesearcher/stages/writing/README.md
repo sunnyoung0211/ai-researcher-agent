@@ -23,7 +23,43 @@ and replacement bytes are saved in a replayable `paper/.writing/pending-syntax.j
 transaction and `syntax-repair-<id>.json` receipt before installation. A conflicting
 human edit requires the existing reconciliation flow. Recovery invalidates the old
 build and recompiles, without resetting model-attempt budgets or rerunning training.
-The deterministic syntax operation is disclosed in the generated AI-use statement.
+Syntax operations are disclosed in the generated AI-use statement.
+
+An old bound claim that cannot be normalized safely enters a dedicated
+`writing/bound_syntax_repair.v1` request through the existing
+`writing.compile_repair` role. Its original claim text, syntax diagnostics,
+replacement rules, validated examples when available, and previous rejected reply
+are provided on correction. `bound-syntax-<source-key>-attempts.json` uses the same
+durable bounded-attempt protocol: two initial attempts, then one per explicit
+manual retry, without granting free calls on restart. A separate accepted receipt
+is revalidated and installed with the normal synchronized source transaction.
+Candidates must retain the source characters, numbers, signs, units and exact
+evidence calls; only literal escapes and missing math/group delimiters may change.
+Historical source, call IDs and failed replies remain available. Syntax repair
+cannot rewrite a scientific statement or manufacture a new evidence binding.
+
+Restricted semantic revision preserves known literal escapes already present in
+the exact source, including `\_`, `\%`, `\&`, `\$` and literal glyph commands.
+Their original occurrence counts are checked before masking them for the prose
+guard. Additional escapes and arbitrary commands remain prohibited. The revision
+context, output-schema guidance and correction examples explicitly tell the model
+to copy inherited escapes unchanged rather than remove or double-escape them.
+
+Semantic review treats each bound claim as a real boundary, rather than merely
+blanking it and allowing a sentence range to bridge the resulting whitespace.
+Unbound units cannot contain claim/value commands or overlap a bound wrapper.
+All source anchors and unit ranges are checked before revision; every replacement
+must retain the other exact claims, and final claim locations use explicit
+validation rather than an unchecked iterator lookup. These checks also precede
+installation of a persisted revision transaction.
+
+A boundary/policy repair keeps the old reports and raw attempts, creates a new
+review artifact version on the same logical review round, and reuses only exactly
+matching unit contexts with locally revalidated replies. Unchanged units retain
+their original bounded-attempt journals. Changed spans are reviewed as new units;
+answers for a larger obsolete span are never applied to a smaller fragment.
+Exact unaffected revision replies may be reused with their original source and
+call IDs, while the invalid deletion that crossed a claim remains historical only.
 
 Numeric claim correction includes every rejected literal, including significance
 cutoffs such as `p<0.05`. The retry context provides complete replacement examples
