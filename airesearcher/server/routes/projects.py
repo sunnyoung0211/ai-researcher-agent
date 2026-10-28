@@ -121,7 +121,9 @@ def list_events(pid: str, after_seq: int = 0, type: str | None = None, run_id: s
                 q: str | None = None, artifact_id: str | None = None, limit: int = 200,
                 tail: int | None = Query(None, ge=1, le=1000,
                                          description="只取符合条件的最新 N 条（仍按时间正序返回）；给了它就忽略 limit"),
+                before_seq: int | None = Query(None, ge=1,
+                                               description="只要 seq 小于它的事件；配合 tail 从新到旧往前翻页"),
                 m: ProjectManager = Depends(manager)) -> list[Event]:
     types = [t for t in (type or "").split(",") if t] or None
     return m.get(pid).events.query(types=types, run_id=run_id, artifact_id=artifact_id, text=q,
-                                   after_seq=after_seq, limit=limit, tail=tail)
+                                   after_seq=after_seq, limit=limit, tail=tail, before_seq=before_seq)

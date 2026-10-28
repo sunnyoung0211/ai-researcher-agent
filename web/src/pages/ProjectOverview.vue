@@ -9,7 +9,7 @@ import TimeText from '../components/TimeText.vue'
 import { exportUrl, latestEvents, listCheckpoints, patchBudget, projectAction, rollback } from '../api/projects'
 import { newRequestId } from '../api/client'
 import { BUDGET, KIND, RUN_KIND, STATE, label } from '../constants/labels'
-import { duration } from '../utils/format'
+import { budgetError, duration, softOverHard } from '../utils/format'
 import { eventText } from '../utils/events'
 import { useLoader, useProject, useProjectRefresh } from '../utils/useLoader'
 import { useI18n } from 'vue-i18n'
@@ -82,6 +82,11 @@ function openBudget() {
   budgetDlg.open = true
 }
 async function saveBudget() {
+  const err = budgetError(budgetDlg.rows)
+  if (err) {
+    ElMessage.error(err)
+    return
+  }
   const cats = st.value?.budget?.categories || {}
   const body = { request_id: newRequestId() }
   for (const r of budgetDlg.rows) {
@@ -231,13 +236,13 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
           <h3 class="section-title">{{ t('overview.activeRuns') }}</h3>
           <router-link :to="`/projects/${pid}/runs`"><el-button size="small" text>{{ t('overview.allRuns') }}</el-button></router-link>
         </div>
-        <div class="panel">
+        <div class="panel fill">
           <div v-for="r in st.active_runs.slice(0, 5)" :key="r.run_id" class="row-item" @click="router.push(`/projects/${pid}/runs/${r.run_id}`)">
             <StateTag kind="run" :value="r.state" size="small" />
             <div class="row-main"><span class="mono">{{ r.task_key }}</span> <span class="meta">{{ label(RUN_KIND, r.kind) }}</span></div>
             <span class="meta">{{ duration(r.started_at, r.ended_at) }}</span>
           </div>
-          <div v-if="!st.active_runs.length" class="empty meta">{{ t('overview.noActiveRuns') }}</div>
+          <div v-if="!st.active_runs.length" class="empty meta center">{{ t('overview.noActiveRuns') }}</div>
         </div>
       </section>
     </div>
@@ -271,10 +276,10 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
         <el-table-column :label="t('newProject.colCategory')" min-width="150"><template #default="{ row }">{{ label(BUDGET, row.name) }}</template></el-table-column>
         <el-table-column :label="t('overview.colUsed')" width="90"><template #default="{ row }"><span class="mono">{{ +row.used.toFixed(4) }}</span></template></el-table-column>
         <el-table-column :label="t('newProject.colSoft')" width="150">
-          <template #default="{ row }"><el-input-number v-model="row.soft" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
+          <template #default="{ row }"><el-input-number :class="{ bad: softOverHard(row) }" v-model="row.soft" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
         </el-table-column>
         <el-table-column :label="t('newProject.colHard')" width="150">
-          <template #default="{ row }"><el-input-number v-model="row.hard" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
+          <template #default="{ row }"><el-input-number :class="{ bad: softOverHard(row) }" v-model="row.hard" :min="0" size="small" controls-position="right" :value-on-clear="null" /></template>
         </el-table-column>
       </el-table>
       <template #footer>
@@ -327,7 +332,10 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
 .callout-actions .el-button { margin-left: 0; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; }
-.grid > .sec { margin: 0; }
+.grid > .sec { margin: 0; display: flex; flex-direction: column; }
+.grid > .sec > .panel { flex: 1; } /* 同一行的卡片等高（预算和进行中的运行） */
+.fill { display: flex; flex-direction: column; }
+.empty.center { flex: 1; display: flex; align-items: center; justify-content: center; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 28px; }
 .panel { background: var(--air-surface); border: 1px solid var(--air-border); border-radius: var(--air-radius); overflow: hidden; }
 .pad { padding: 18px 20px; }
@@ -347,4 +355,5 @@ const EVENT_COLOR = (t) => (t.includes('fail') || t.includes('error') ? 'danger'
 .ev-time { flex: none; }
 .mb { margin-bottom: 12px; }
 .ml { margin-left: 6px; }
+.bad :deep(.el-input__wrapper) { box-shadow: 0 0 0 1px var(--el-color-danger) inset; }
 </style>

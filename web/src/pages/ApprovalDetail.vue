@@ -188,7 +188,10 @@ async function saveEdit() {
       <el-alert v-if="!isPending" :type="a.status === 'approved' ? 'success' : 'info'" :closable="false" show-icon class="mb">
         <template #title>
           {{ t('approval.handled') }}<StateTag kind="approval" :value="a.status" size="small" />
-          <span v-if="a.decided_at">（<TimeText :value="a.decided_at" />，{{ a.decided_by || '—' }}）</span>
+          <i18n-t v-if="a.decided_at" keypath="approval.decidedAt" tag="span" scope="global">
+            <template #time><TimeText :value="a.decided_at" /></template>
+            <template #by>{{ a.decided_by || '—' }}</template>
+          </i18n-t>
           <span v-if="a.decision_comment">{{ t('approval.comment') }}{{ a.decision_comment }}</span>
           <router-link :to="`/projects/${pid}`" class="ml">{{ t('approval.backToOverview') }}</router-link>
         </template>
@@ -198,7 +201,7 @@ async function saveEdit() {
         <!-- 左：要审的内容（阅读模式） -->
         <section class="content">
           <div class="content-bar">
-            <CopyText :text="data.target_path" class="meta path" />
+            <CopyText :text="data.target_path" class="meta path">{{ a.target.artifact_id }}</CopyText>
             <span class="spacer" />
             <el-switch v-if="canDiff" v-model="showDiff" :active-text="t('approval.diffWith', { v: prev.version })" />
             <el-button v-if="canEdit" size="small" icon="Edit" text @click="openEdit">{{ t('approval.edit') }}</el-button>
