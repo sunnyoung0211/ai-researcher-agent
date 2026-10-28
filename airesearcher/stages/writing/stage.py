@@ -26,7 +26,7 @@ from airesearcher.engine.stage import Continue, Error, NeedsApproval, StageConte
 from airesearcher.llm.gateway import LLMOutputError
 from airesearcher.services import evidence, literature, runs
 
-from . import attempts, figure_planning, recovery
+from . import attempts, claim_feedback, figure_planning, latex_syntax, recovery, syntax_recovery
 from . import claims as binding
 from . import review as semantic
 from ._latex import TemplateError, safe_path
@@ -124,6 +124,10 @@ class WritingStage:
         if meta and meta.get("evidence_check", False) != ctx.project.evidence_check:
             raise ValueError("Writing mode changed in place; preserve history and use a fresh workspace")
         meta["evidence_check"] = ctx.project.evidence_check
+        syntax_pending = _receipt(ctx, "pending-syntax")
+        if syntax_pending and not syntax_pending.get("done"):
+            syntax_recovery.finish(ctx, s, meta, syntax_pending, _receipt, _save, _path)
+            return Continue("Interrupted syntax-only repair completed; source validation resumes")
         if ctx.project.evidence_check:
             semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2))
             revision = _receipt(ctx, "pending-revision")
@@ -293,6 +297,8 @@ class WritingStage:
             guidance=guidance,
             claims=claims,
         )
+        if syntax_recovery.repair_owned(ctx, s, meta, writer, _receipt, _save, _path, _hash):
+            return Continue("Generated LaTeX literals repaired locally; bound evidence retained; no model call")
         if phase == "write":
             return self._write(ctx, s, meta, writer)
         if phase == "compile":
@@ -388,41 +394,99 @@ class WritingStage:
             s.update(claim_basis=basis, phase="write")
             return Continue("Reusing exact bound claims")
         name = "claim-plan-" + basis
-        receipt = _receipt(ctx, name)
-        responses = receipt.setdefault("responses", [])
-        claims, errors = binding.bind_plan(ctx.root, responses[-1]["plan"], bundle, figures) if responses else ([], [])
-        if not responses or (errors and len(responses) == 1):
-            response = ctx.llm.complete(
+        journal_name = name + "-attempts"
+
+        def load(context, path):
+            journal = _receipt(context, path)
+            if not journal:
+                # Keep old receipts byte-for-byte. Their completed calls count
+                # toward this basis's limit instead of becoming free retries.
+                legacy = _receipt(context, name)
+                if legacy.get("responses"):
+                    records = []
+                    for i, response in enumerate(legacy["responses"], 1):
+                        _, errors = latex_syntax.bind_plan(ctx.root, response["plan"], bundle, figures)
+                        records.append({"number": i, "status": "rejected" if errors else "accepted",
+                                        "response": response["plan"], "call_id": response.get("call_id"),
+                                        "prompt_version": response.get("prompt_version"),
+                                        "reason": "; ".join(errors)})
+                    journal = {"attempts": records, "window_start": 0, "answers": [], "legacy_receipt": name}
+                    _save(context, path, journal)
+                elif installed.get("basis") and installed["basis"] != basis:
+                    # A validator update invalidates existing bound claims. Repair
+                    # their original intent, not unrelated summary prose. Old
+                    # receipts remain immutable and their call IDs stay inspectable.
+                    old_name = "claim-plan-" + installed["basis"]
+                    old = _receipt(context, old_name + "-attempts")
+                    prior = next((r for r in reversed(old.get("attempts", []))
+                                  if binding.response_plan(r.get("response", r.get("raw")))), None)
+                    if prior is None:
+                        legacy = _receipt(context, old_name).get("responses", [])
+                        if legacy:
+                            prior = {"response": legacy[-1]["plan"], "call_id": legacy[-1].get("call_id")}
+                    if prior:
+                        plan = binding.response_plan(prior.get("response", prior.get("raw")))
+                        _, errors = latex_syntax.bind_plan(ctx.root, plan, bundle, figures)
+                        if errors:
+                            journal = {"attempts": [], "window_start": 0, "answers": [], "repair_source": {
+                                **prior, "source_basis": installed["basis"], "reason": "; ".join(errors),
+                            }}
+                            _save(context, path, journal)
+            return journal
+
+        def call():
+            journal = load(ctx, journal_name)
+            records = journal.get("attempts", [])
+            # attempts.complete persists the new 'started' entry before calling us.
+            # Feedback must reference the preceding completed/rejected candidate.
+            previous = next((r for r in reversed(records) if r["status"] != "started"),
+                            journal.get("repair_source"))
+            correction = None
+            if previous:
+                correction = claim_feedback.correction_context(
+                    ctx.root, previous.get("response", previous.get("raw")),
+                    previous.get("reason", ""), bundle, figures,
+                )
+                # Manual retries can have identical failed prose and errors. The
+                # durable attempt number prevents replay of the same cached failure.
+                correction["attempt_number"] = records[-1]["number"]
+            schema = binding.ClaimPlan.model_json_schema()
+            schema["$defs"]["PlannedClaim"]["properties"]["text_template"]["description"] = latex_syntax.RULES
+            return ctx.llm.complete(
                 role="writing.claims",
                 prompt_id=binding.PROMPT_ID,
                 tier="strong",
                 max_retries=0,
                 response_schema=binding.ClaimPlan,
                 variables={
-                    "schema": binding.ClaimPlan.model_json_schema(),
+                    "schema": schema,
                     "evidence": ctx.llm.wrap_untrusted(
                         json.dumps(binding.planning_context(bundle, figures)), "claim-evidence"
                     ),
                     "correction": ctx.llm.wrap_untrusted(
-                        json.dumps({"previous": responses[-1]["plan"], "errors": errors}), "claim-correction"
+                        json.dumps(correction), "claim-correction"
                     )
-                    if responses
+                    if previous
                     else "null",
                 },
             )
-            plan = binding.ClaimPlan.model_validate(response.parsed).model_dump(mode="json")
-            responses.append({"plan": plan, "call_id": response.call_id, "prompt_version": response.prompt_version})
-            receipt["errors"] = errors
-            _save(ctx, name, receipt)  # durable response before any binding/file installation
-            return Continue(
-                "Claim planning response persisted" if len(responses) == 1 else "One correction response persisted"
-            )
-        if len(responses) == 2 and len(responses[0]["plan"]["claims"]) != len(responses[1]["plan"]["claims"]):
-            raise ValueError("claim correction must preserve ordered claim slots/IDs")
-        receipt["dropped"] = errors
-        _save(ctx, name, receipt)
-        if any(e.startswith(("coverage:", "binding:")) for e in errors):
-            raise ValueError("claim coverage/binding failed after bounded correction: " + "; ".join(errors))
+
+        def validate(plan):
+            journal = load(ctx, journal_name)
+            records = [*([journal["repair_source"]] if journal.get("repair_source") else []),
+                       *journal.get("attempts", [])]
+            first = next((p for r in records
+                          if (p := binding.response_plan(r.get("response", r.get("raw")))) is not None), None)
+            if first and len(first["claims"]) != len(plan["claims"]):
+                raise ValueError("claim correction must preserve ordered claim slots/IDs")
+            _, errors = latex_syntax.bind_plan(ctx.root, plan, bundle, figures)
+            if errors:
+                raise ValueError("claim coverage/binding failed: " + "; ".join(errors))
+
+        result = attempts.complete(ctx, journal_name, load, _save, call, validate, allow_skip=False)
+        claims, errors = latex_syntax.bind_plan(ctx.root, result["response"], bundle, figures)
+        if errors:
+            raise ValueError("accepted claim plan changed during binding: " + "; ".join(errors))
         self._install_claims(ctx, basis, claims)
         s.update(claim_basis=basis, phase="write")
         return Continue("Claims bound to exact evidence; code-generated values installed")
@@ -568,6 +632,102 @@ class WritingStage:
             },
         )
 
+    def _semantic_attempt(self, ctx, name, prompt, role, schema, context, validate, *, claim=None, placeholders=None):
+        def call():
+            history = _receipt(ctx, name).get("attempts", [])
+            previous = next((a for a in reversed(history) if a["status"] != "started"), None)
+            request_context = dict(context)
+            if previous:
+                request_context["correction"] = semantic.correction_context(
+                    context, previous, history[-1]["number"], claim=claim, placeholders=placeholders,
+                    reviewing=prompt == semantic.REVIEW_PROMPT,
+                )
+            return self._semantic_call(ctx, prompt, role, schema, request_context)
+
+        return attempts.complete(ctx, name, _receipt, _save, call, validate)
+
+    def _compatible_review_policy(self, ctx, s, meta, writer):
+        """Reuse a completed review only after exact local revalidation, without new calls."""
+        old = _receipt(ctx, "semantic-" + s["semantic_basis"])
+        current_route = self._semantic_route(ctx, semantic.REVIEW_PROMPT, "writing.reviewer")
+        old_route = old.get("route", {})
+        if ({k: v for k, v in old_route.items() if k != "policy"}
+                != {k: v for k, v in current_route.items() if k != "policy"}):
+            return False
+        if (not old.get("report") or old.get("claims_ref") != s["claims_ref"]
+                or _hash([s["claims_ref"], s["deterministic_report"], old_route]) != s["semantic_basis"]):
+            return False
+        report = CheckReport.model_validate(s["deterministic_report"])
+        source = ctx.archive.stored_path(report.paper_ref)
+        units = semantic.units(source, writer.claims, writer.bundle, report)
+        if units != old["units"] or len(old["responses"]) != len(units):
+            return False
+        issues = []
+        try:
+            for unit, saved in zip(units, old["responses"], strict=True):
+                issues.extend([self._incomplete(unit)] if saved.get("skipped")
+                              else semantic.normalize(unit, saved["response"]))
+        except (ValueError, KeyError):
+            return False
+        issues.extend(self._incomplete(x["unit"]) for x in meta.get("semantic_incomplete", [])
+                      if x["cycle"] == self._cycle(s))
+        combined = semantic.merge(report, issues)
+        if combined != CheckReport.model_validate(old["report"]):
+            return False
+        name = "semantic-policy-" + _hash([s["semantic_basis"], current_route])
+        if not _receipt(ctx, name):
+            _save(ctx, name, {"original_basis": s["semantic_basis"], "original_route": old_route,
+                              "validated_route": current_route, "report_sha256": _hash(old["report"]),
+                              "units_sha256": _hash(units)})
+            ctx.log("Existing semantic review revalidated locally after a policy update; no model call")
+        return True
+
+    def _compatible_revision_route(self, ctx, old, current):
+        if ({k: v for k, v in old.items() if k != "policy"}
+                == {k: v for k, v in current.items() if k != "policy"}):
+            return True
+        # This immutable prompt upgrade adds corrective guidance, not new facts.
+        # Other prompt/model/skill changes retain their usual invalidation behavior.
+        if old.get("prompt", [None, None])[1] != 1 or current["prompt"][1] != 2:
+            return False
+        old_prompt = ctx.llm.prompts.load(semantic.REVISE_PROMPT, 1)
+        new_prompt = ctx.llm.prompts.load(semantic.REVISE_PROMPT, 2)
+        if (old["prompt"] != [old_prompt.id, 1, sha256_file(old_prompt.path)]
+                or current["prompt"] != [new_prompt.id, 2, sha256_file(new_prompt.path)]):
+            return False
+        return ({k: v for k, v in old.items() if k not in {"prompt", "policy"}}
+                == {k: v for k, v in current.items() if k not in {"prompt", "policy"}})
+
+    def _revision_receipt(self, ctx, s, meta, route, claims, targets):
+        inputs = [[u, [i.model_dump() for i in issues]] for u, issues in targets]
+        basis = _hash([s["semantic_basis"], route, claims, inputs])
+        name = "revision-" + basis
+        receipt = _receipt(ctx, name)
+        if receipt:
+            return basis, name, receipt
+        matches = []
+        for path in _path(ctx, "paper/.writing").glob("revision-*.json"):
+            if not re.fullmatch(r"revision-[0-9a-f]{64}", path.stem):
+                continue
+            old = _receipt(ctx, path.stem)
+            if (old.get("basis") in meta.get("semantic_revisions", [])
+                    or old.get("review_basis") != s["semantic_basis"] or not old.get("route")):
+                continue
+            expected = _hash([s["semantic_basis"], old["route"], claims, inputs])
+            if (expected == old.get("basis") and path.stem == "revision-" + expected
+                    and self._compatible_revision_route(ctx, old["route"], route)):
+                matches.append((expected, path.stem, old))
+        if len(matches) > 1:
+            raise ValueError("Ambiguous compatible revision receipts; preserve history and reconcile explicitly")
+        if matches:
+            basis, name, receipt = matches[0]
+            routes = receipt.setdefault("continuation_routes", [])
+            if route not in routes:
+                routes.append(route)
+                _save(ctx, name, receipt)
+            return basis, name, receipt
+        return basis, name, {}
+
     def _review(self, ctx, s, meta, writer):
         report = CheckReport.model_validate(s["deterministic_report"])
         paper = report.paper_ref
@@ -617,10 +777,9 @@ class WritingStage:
                     pass  # Legacy response was persisted before failed normalization.
                 else:
                     continue
-            saved = attempts.complete(
-                ctx, f"{name}-{index}-attempts", _receipt, _save,
-                lambda unit=unit: self._semantic_call(ctx, semantic.REVIEW_PROMPT, "writing.reviewer",
-                                            semantic.ReviewResponse, semantic.model_context(unit)),
+            saved = self._semantic_attempt(
+                ctx, f"{name}-{index}-attempts", semantic.REVIEW_PROMPT, "writing.reviewer",
+                semantic.ReviewResponse, semantic.model_context(unit),
                 lambda value, unit=unit: semantic.normalize(unit, value),
             )
             result = saved or {"skipped": True}
@@ -673,7 +832,8 @@ class WritingStage:
         return Continue("Combined deterministic and semantic review persisted")
 
     def _revise(self, ctx, s, meta, writer):
-        if s["semantic_basis"] != self._review_basis(ctx, s):
+        if (s["semantic_basis"] != self._review_basis(ctx, s)
+                and not self._compatible_review_policy(ctx, s, meta, writer)):
             s["phase"] = "review"
             return Continue("Semantic dependencies changed before revision; rereview")
         if meta["compiled"]["source_sha256"] != self._source_sha(ctx):
@@ -688,17 +848,9 @@ class WritingStage:
             if semantic.comparison_revisable(u, next((c for c in writer.claims if c.claim_id == u["claim_id"]), None))
         ]
         route = self._semantic_route(ctx, semantic.REVISE_PROMPT, "writing.reviser")
-        basis = _hash(
-            [
-                s["semantic_basis"],
-                route,
-                [c.model_dump() for c in writer.claims],
-                [(u, [i.model_dump() for i in issues]) for u, issues in targets],
-            ]
+        basis, name, receipt = self._revision_receipt(
+            ctx, s, meta, route, [c.model_dump() for c in writer.claims], targets,
         )
-        # Issue models are serialized explicitly for the receipt identity.
-        name = "revision-" + basis
-        receipt = _receipt(ctx, name)
         if not receipt:
             receipt = {"basis": basis, "review_basis": s["semantic_basis"], "route": route, "responses": []}
             _save(ctx, name, receipt)
@@ -730,12 +882,12 @@ class WritingStage:
                 if len(history) >= semantic.round_limit(ctx.project.paper.get("max_review_rounds", 2)):
                     s["phase"] = "submit"
                     return Continue("Current review-round budget exhausted; retain residual issues for human review")
-                saved = attempts.complete(
-                    ctx, f"{name}-{index}-attempts", _receipt, _save,
-                    lambda context=context: self._semantic_call(ctx, semantic.REVISE_PROMPT, "writing.reviser",
-                                                semantic.RevisionResponse, context),
+                saved = self._semantic_attempt(
+                    ctx, f"{name}-{index}-attempts", semantic.REVISE_PROMPT, "writing.reviser",
+                    semantic.RevisionResponse, context,
                     lambda value, context=context, placeholders=placeholders, claim=claim:
                         semantic.validate_revision(context, placeholders, value, claim),
+                    claim=claim, placeholders=placeholders,
                 )
                 receipt["responses"].append(saved or {"skipped": True})
                 _save(ctx, name, receipt)
@@ -1335,8 +1487,11 @@ class WritingStage:
                 def request(section=section, name=name):
                     journal = _receipt(ctx, name)
                     history = journal.get("attempts", [])
-                    reason = next((a.get("reason", "") for a in reversed(history) if a.get("reason")), "")
-                    return writer.request_section(section, rejection_reason=reason)
+                    previous = next((a for a in reversed(history) if a["status"] != "started"), None)
+                    reason = previous.get("reason", "") if previous else ""
+                    correction = (writer.section_correction(section, previous, history[-1]["number"])
+                                  if previous else None)
+                    return writer.request_section(section, rejection_reason=reason, correction=correction)
                 def validate_payload(payload, section=section):
                     try:
                         writer.validate_generated(section, payload)
@@ -1406,6 +1561,10 @@ class WritingStage:
                 lines.append(
                     "An interrupted repair attempt has uncertain completion status and consumes its retry budget."
                 )
+        if meta.get("syntax_repairs"):
+            lines.append("Deterministic literal-character escaping was applied to generated LaTeX. "
+                         "Original bytes and replacements are retained in internal syntax-repair receipts; "
+                         "experimental values and evidence selectors were preserved.")
         if human:
             lines.append("Human-edited sections preserved: " + _tex(", ".join(human)) + ".")
         if "fallback_from" in meta and s["template"] is None:
@@ -1579,6 +1738,30 @@ class WritingStage:
             return self._compile_question(ctx, meta)
         section = sorted(targets)[0]
         original = writer.read_section(section)
+        previous = current[-1] if current else None
+        correction = latex_syntax.feedback(original.latex)
+        correction.update(
+            attempt_number=len(current) + 1,
+            previous_response=(previous.get("response", previous.get("output")) if previous else None),
+            previous_rejection=(previous.get("reason") if previous else None),
+            error_lines=[
+                {"error": error, "source": [
+                    {"line": i + 1, "text": line}
+                    for i, line in enumerate(original.latex.splitlines())
+                    if type(error.get("line")) is int and abs(i + 1 - error["line"]) <= 2
+                ]}
+                for error in targets[section]
+            ],
+        )
+        correction["repair_actions"].extend([
+            "Repair the reported error_lines, not unrelated prose. Return the entire corrected SectionOutput. "
+            "If Missing $ inserted is reported, inspect text underscores/carets and unmatched math delimiters; "
+            r"use \_ for a literal underscore instead of adding arbitrary dollar signs.",
+            "Retain every supplied immutable bound claim exactly. A syntax problem inside one must be "
+            "reconciled by the local syntax-recovery path, not rewritten as a new factual claim.",
+            "Use previous_rejection and previous_response to change the rejected candidate. An unchanged "
+            "fragment is rejected; the attempt_number identifies this new correction request.",
+        ])
         attempt = {
             "cycle": cycle,
             "section": section,
@@ -1597,7 +1780,7 @@ class WritingStage:
                 max_retries=0,
                 variables={
                     "section": section,
-                    "skill_rules": writer.skill.instructions,
+                    "skill_rules": writer.skill.instructions + "\n" + latex_syntax.RULES,
                     "evidence": ctx.llm.wrap_untrusted(
                         json.dumps(
                             {
@@ -1605,15 +1788,22 @@ class WritingStage:
                                 "errors": targets[section],
                                 "citation_keys": sorted(writer._allowed),
                                 "figures": writer.figures,
+                                "bound_claims": [c.model_dump() for c in writer.claims or [] if c.section == section],
+                                "correction": correction,
                             }
                         ),
                         "compile-repair",
                     ),
                 },
             )
-            attempt.update(call_id=response.call_id, prompt_version=response.prompt_version)
+            attempt.update(call_id=response.call_id, prompt_version=response.prompt_version,
+                           response=response.parsed)
             output = SectionOutput.model_validate(response.parsed)
+            output = output.model_copy(update={"latex": latex_syntax.normalize(output.latex)})
             writer.validate_section(output, section)
+            if _section_bytes(output) == _section_bytes(original):
+                raise ValueError("Compile repair left the failed source unchanged; apply error_lines and "
+                                 "the literal-character replacements, then return a new complete section")
             attempt.update(
                 status="accepted",
                 output=output.model_dump(),

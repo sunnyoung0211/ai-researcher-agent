@@ -1,6 +1,7 @@
 """Evidence-aware Stage vertical slice, recovery, ownership and exact provenance."""
 
 import json
+import re
 
 import pytest
 
@@ -92,9 +93,143 @@ def test_one_correction_and_coverage_failure(writing_true, monkeypatch):
         tick = e.tick()
         if isinstance(tick.result, (Error, Stop)):
             break
-    assert isinstance(tick.result, Error) and "coverage" in tick.result.message
+    assert isinstance(tick.result, Stop)
+    assert {o.id for o in p.questions.pending().options} == {"retry", "end"}
     assert len(claim_calls(e)) == 2 and not writing_calls(e)
     assert not (p.root / "paper/claims.jsonl").exists()
+
+
+@pytest.mark.parametrize("failures", [1, 2])
+def test_claim_repair_sends_instructions_and_never_replays_failed_cache(writing_true, monkeypatch, failures):
+    from airesearcher.llm.gateway import LiteLLMBackend
+    from airesearcher.runtime.local import LocalExecutor
+    from scripts.writing.demo import SampleWritingLLM
+
+    p, e = writing_true
+    original = SampleWritingLLM.call
+    feedbacks, bad = [], []
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Offline claim recovery must not call a real API or submit training")
+
+    monkeypatch.setattr(LiteLLMBackend, "call", forbidden)
+    monkeypatch.setattr(LocalExecutor, "submit", forbidden)
+
+    def repair(self, request):
+        response = original(self, request)
+        if request.prompt_id != binding.PROMPT_ID:
+            return response
+        blocks = re.findall(r"<untrusted_document[^>]*>\s*(.*?)\s*</untrusted_document>",
+                            request.messages[1]["content"], re.S)
+        feedback = json.loads(blocks[1]) if len(blocks) > 1 else None
+        feedbacks.append(feedback)
+        if len(feedbacks) > 1:
+            assert feedback["previous"] == bad[-1]
+            assert feedback["attempt_number"] == len(feedbacks)
+            slot = next(r for r in feedback["repairs"] if r["claim_id"] == "CL1")
+            assert slot["value_example"]["aggregate_id"] == "C1"
+            assert "[[DIFF]]" in slot["text_template_example"]
+            assert any("nonempty values" in err for err in feedback["errors"])
+        if len(feedbacks) <= failures:
+            data = json.loads(response.text)
+            data["claims"][0].update(text_template="The first method performs better.", values=[])
+            bad.append(data)
+            response.text = json.dumps(data)
+        return response
+
+    monkeypatch.setattr(SampleWritingLLM, "call", repair)
+    if failures == 2:
+        from .test_writing_attempts import until_question
+
+        q = until_question(p, e)
+        assert {o.id for o in q.options} == {"retry", "end"}
+        e = restart(p, e)
+        for _ in range(3):
+            e.tick()
+        assert len(feedbacks) == 2  # Waiting/restarting cannot spend another call.
+        p.questions.answer(q.question_id, "retry", request_id=q.question_id)
+        e = restart(p, e)
+    run(e)
+    assert len(feedbacks) == failures + 1
+    assert len(claim_calls(e)) == failures + 1
+    journal = next((p.root / "paper/.writing").glob("claim-plan-*-attempts.json"))
+    records = json.loads(journal.read_text(encoding="utf-8"))["attempts"]
+    assert [r["status"] for r in records] == ["rejected"] * failures + ["accepted"]
+    assert all(r.get("call_id") and r.get("raw") for r in records)
+    assert (p.root / "paper/claims.jsonl").exists()
+
+
+def test_legacy_failed_claim_receipt_requires_decision_and_keeps_history(writing_true):
+    from airesearcher.stages.writing import stage
+    from airesearcher.stages.writing.bundle import EvidenceBundle
+
+    from .test_writing_claims import valid_plan
+    from .test_writing_stage import receipt
+
+    p, e = writing_true
+    to_phase(e, "claims")
+    s = e.ck.scratch["writing"]
+    bundle = EvidenceBundle.model_validate_json((p.root / "paper/evidence_bundle.json").read_bytes())
+    figures = binding.load_figures(p.root, {fid: stage._ref(raw) for fid, raw in s["figures"].items()})
+    basis = stage.WritingStage()._claim_basis(e.build_context(), s, bundle, figures)
+    bad = valid_plan(bundle)
+    bad["claims"][0]["hypothesis"] = None
+    name = "claim-plan-" + basis
+    old = p.root / f"paper/.writing/{name}.json"
+    original = json.dumps({"responses": [{"plan": bad, "call_id": f"old-{i}", "prompt_version": 1}
+                                        for i in range(2)], "errors": ["old failure"]}).encode()
+    old.write_bytes(original)
+    tick = e.tick()
+    assert isinstance(tick.result, Stop) and len(claim_calls(e)) == 0
+    assert old.read_bytes() == original
+    journal = receipt(p, name + "-attempts")
+    assert len(journal["attempts"]) == 2 and journal["legacy_receipt"] == name
+    q = p.questions.pending()
+    p.questions.answer(q.question_id, "retry", request_id=q.question_id)
+    run(restart(p, e))
+    assert len(claim_calls(e)) == 1 and old.read_bytes() == original
+    assert [r["number"] for r in receipt(p, name + "-attempts")["attempts"]] == [1, 2, 3]
+
+
+def test_plan_parameter_claim_completes_fake_writing_and_real_compilation(tmp_path, monkeypatch):
+    import shutil
+
+    from airesearcher.llm.gateway import LiteLLMBackend
+    from airesearcher.runtime.local import LocalExecutor
+    from scripts.writing.demo import SampleWritingLLM
+
+    if not shutil.which("latexmk"):
+        pytest.skip("Requires local latexmk for the real compilation boundary")
+    p, e = prepare_sample(tmp_path / "compiled-parameter", compile_enabled=True, evidence_check=True)
+    original = SampleWritingLLM.call
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Fake writing validation cannot call a real API or submit training")
+
+    monkeypatch.setattr(LiteLLMBackend, "call", forbidden)
+    monkeypatch.setattr(LocalExecutor, "submit", forbidden)
+
+    def with_method(self, request):
+        response = original(self, request)
+        if request.prompt_id == binding.PROMPT_ID:
+            data = json.loads(response.text)
+            data["claims"].append({
+                "section": "method", "type": "method_fact", "statement_kind": "observation",
+                "hedge": "none", "importance": "minor", "values": [], "comparison": None,
+                "text_template": "The approved duration is [[SECONDS]] seconds.",
+                "plan_parameters": [{"name": "SECONDS", "experiment_id": "E1", "parameter": "seconds"}],
+                "evidence": [{"type": "plan", "ref": "plan/experiment_plan.md", "selector": {"experiments": ["E1"]}}],
+            })
+            response.text = json.dumps(data)
+        return response
+
+    monkeypatch.setattr(SampleWritingLLM, "call", with_method)
+    run(e)
+    assert (p.root / "paper/build/main.pdf").read_bytes().startswith(b"%PDF-")
+    report = CheckReport.model_validate_json((p.root / "paper/review/review_v1.json").read_bytes())
+    assert report.compile_ok and report.counts["blocker"] == 0 and report.counts["major"] == 0
+    method = next(c for c in evidence.load_claims(p.root) if c.type == "method_fact")
+    assert "1.0 seconds" in method.text and method.evidence[0].version == e.ck.approved["plan"].version
 
 
 @pytest.mark.parametrize("relative", ["claims.jsonl", "air_values.tex", "sections/results.tex"])

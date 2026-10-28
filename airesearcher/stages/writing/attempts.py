@@ -3,12 +3,25 @@ from pydantic import BaseModel
 
 from airesearcher.core.models.question import Question, QuestionOption
 from airesearcher.engine.stage import Continue, Stop
-from airesearcher.llm.gateway import LLMOutputError
+from airesearcher.llm.gateway import LLMOutputError, TransientLLMError
 
 
 class DecisionRequired(Exception):
     def __init__(self, result):
         self.result = result
+
+
+def _question_text(name, records):
+    text = f"Semantic unit {name} exhausted model responses or was interrupted. Inspect attempts before proceeding."
+    if records and records[-1]["status"] == "call_failed":
+        failure = records[-1]
+        text = f"Semantic unit {name} failed during the model call; no usable response was recorded."
+        text += f" Original error: {failure['reason']}."
+        if "location is not supported" in failure["reason"].lower():
+            text += (" The provider rejected this location. Use a model service available to your region "
+                     "and account before retrying; rewriting the manuscript cannot resolve provider access.")
+        text += " Retrying may incur additional charges; no successful response or zero-cost outcome is assumed."
+    return text
 
 
 def complete(ctx, name, load, save, call, validate, *, allow_skip=True):
@@ -40,8 +53,9 @@ def complete(ctx, name, load, save, call, validate, *, allow_skip=True):
         persist()
     limit = 1 if journal["window_start"] else 2
     interrupted = records and records[-1]["status"] == "interrupted"
-    if interrupted or len(records) - journal["window_start"] >= limit:
-        text = f"Semantic unit {name} exhausted model responses or was interrupted. Inspect attempts before proceeding."
+    call_failed = records and records[-1]["status"] == "call_failed"
+    if interrupted or call_failed or len(records) - journal["window_start"] >= limit:
+        text = _question_text(name, records)
         answer = ctx.answer
         if answer and answer.question_id not in journal["answers"]:
             record = ctx.questions.record(answer.question_id)
@@ -72,16 +86,25 @@ def complete(ctx, name, load, save, call, validate, *, allow_skip=True):
     persist()  # An ambiguous call never becomes a free restart retry.
     try:
         response = call()
-        payload = response.parsed.model_dump(mode="json") if isinstance(response.parsed, BaseModel) else response.parsed
-        attempt.update(response=payload, raw=response.text, call_id=response.call_id, status="returned",
-                       prompt_id=getattr(response, "prompt_id", None),
-                       prompt_version=getattr(response, "prompt_version", None))
-        persist()  # A completed call is durable before validating or installing output.
     except LLMOutputError as exc:
         attempt.update(status="rejected", reason=str(exc), raw=getattr(exc, "response_text", None),
                        call_id=getattr(exc, "call_id", None))
         persist()
         raise DecisionRequired(Continue("Rejected semantic response retained; bounded retry pending")) from exc
+    except Exception as exc:
+        status = getattr(exc, "status_code", None)
+        if not isinstance(exc, TransientLLMError) and not isinstance(status, int):
+            raise  # Process/storage/permission failures retain their existing recovery semantics.
+        attempt.update(status="call_failed", error_type=type(exc).__name__, http_status=status,
+                       reason=f"{type(exc).__name__}" + (f" (HTTP {status})" if status else "") + f": {exc}",
+                       cost_status="unknown; no successful response recorded")
+        persist()
+        raise DecisionRequired(Continue("Model call failure retained; explicit recovery required")) from exc
+    payload = response.parsed.model_dump(mode="json") if isinstance(response.parsed, BaseModel) else response.parsed
+    attempt.update(response=payload, raw=response.text, call_id=response.call_id, status="returned",
+                   prompt_id=getattr(response, "prompt_id", None),
+                   prompt_version=getattr(response, "prompt_version", None))
+    persist()  # A completed call is durable before validating or installing output.
     try:
         validate(attempt["response"])
     except ValueError as exc:

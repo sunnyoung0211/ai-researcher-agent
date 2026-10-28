@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from typing import Literal
@@ -11,6 +12,7 @@ from pydantic import Field
 from airesearcher.core.models.claim import Issue
 
 from . import claims as binding
+from . import latex_syntax
 from ._latex import active_text, commands
 
 REVIEW_PROMPT = "writing/review"
@@ -342,23 +344,58 @@ def revision_context(unit, issues, claim):
     return context, placeholders
 
 
+REVISION_TOKEN = r"\[\[(?:VALUE|CITATION)_\d+\]\]"
+QUANTITY_WORD = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|"
+    r"forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)\b", re.I,
+)
+
+
+def revision_identifiers(sentence):
+    """Only exact numeric names already in the code-owned original are exempt."""
+    sentence = re.sub(REVISION_TOKEN, "", sentence)
+    return sorted({name for name in binding.IDENTIFIER.findall(sentence) if re.search(r"\d", name)})
+
+
+def _identifier_pattern(name):
+    return r"(?<![\w-])" + re.escape(name) + r"(?![\w-])"
+
+
+def _revision_surface(text, original):
+    text, original = (re.sub(REVISION_TOKEN, "", value) for value in (text, original))
+    for name in revision_identifiers(original):
+        pattern = _identifier_pattern(name)
+        if len(re.findall(pattern, text)) != len(re.findall(pattern, original)):
+            raise ValueError(f"revision must preserve the exact existing identifier {name!r} and its multiplicity")
+        text = re.sub(pattern, " ", text)
+    return text
+
+
 def validate_revision(context, placeholders, raw, claim):
     response = RevisionResponse.model_validate(raw)
     if response.sentence != context["sentence"] or response.claim_id != context["claim_id"]:
         raise ValueError("revision exact sentence/claim identity mismatch")
     text = response.replacement
-    token = r"\[\[(?:VALUE|CITATION)_\d+\]\]"
+    token = REVISION_TOKEN
     expected = Counter(re.findall(token, context["sentence"]))
     actual = Counter(re.findall(token, text))
     if actual != expected:
         raise ValueError("revision must preserve exact value placeholder multiplicities")
-    surface = re.sub(token, "", text)
+    surface = _revision_surface(text, context["sentence"]) if text.strip() or claim else ""
     if "[[" in surface or "]]" in surface:
         raise ValueError("unknown revision placeholder")
     # Restrict revision to literal wording + existing value slots. Citations, figures,
     # TeX commands, comments and numbers cannot be manufactured or concealed.
-    if re.search(r"[\\{}%$#&^~]|(?<![\w])[-+]?\d+(?:\.\d+)?", surface):
-        raise ValueError("revision may not add commands, citations, figures or raw numbers")
+    forbidden = re.findall(r"[\\{}%$#&^~]|(?<![\w])[-+]?\d+(?:\.\d+)?", surface)
+    if forbidden:
+        raise ValueError("revision may not add commands, citations, figures or raw numbers; offending tokens: "
+                         + repr(forbidden))
+    original = _revision_surface(context["sentence"], context["sentence"])
+    new_quantities = Counter(QUANTITY_WORD.findall(surface.lower())) - Counter(QUANTITY_WORD.findall(original.lower()))
+    if new_quantities:
+        raise ValueError("revision may not add spelled-out numeric quantities: " + ", ".join(new_quantities)
+                         + "; use a qualitative limitation such as 'a limited number of runs' instead")
     if claim:
         if not text.strip():
             raise ValueError("bound Claim cannot be removed")
@@ -385,11 +422,84 @@ def validate_revision(context, placeholders, raw, claim):
             raise ValueError("revision cannot strengthen hedge")
         for placeholder, macro in placeholders.items():
             text = text.replace(placeholder, macro)
+        text = latex_syntax.normalize(text)
         revised = claim.model_copy(update={"text": f"\\claim{{{claim.claim_id}}}{{{text}}}", "hedge": response.hedge})
         return revised.text, revised
     if response.hedge != "none":
         raise ValueError("unbound prose has no Claim hedge field")
-    return text, None
+    return latex_syntax.normalize(text), None
+
+
+def correction_context(context, previous, attempt_number, *, claim=None, placeholders=None, reviewing=False):
+    """A new request includes the rejected candidate, concrete edits and checked examples."""
+    candidate = previous.get("response", previous.get("raw"))
+    if isinstance(candidate, str):
+        try:
+            block = re.search(r"```(?:json)?\s*(.*?)```", candidate, re.S)
+            candidate = json.loads(block[1] if block else candidate)
+        except ValueError:
+            pass
+    errors = [previous.get("reason", "Unrecorded/interrupted response; return complete schema JSON")]
+    actions = [
+        "Return NEW complete schema JSON. Echo the exact supplied sentence and claim_id, not an edited target.",
+        "Use the rejected candidate below as correction input; repair every reported field before returning it.",
+    ]
+    feedback = {"attempt_number": attempt_number, "previous": candidate, "errors": errors,
+                "required_identity": {k: context[k] for k in ("sentence", "claim_id")}, "repair_actions": actions}
+    if reviewing:
+        actions.extend([
+            "Return only sentence, claim_id and issues. Each issue has only code, detail and suggestion; "
+            "severity/support/provenance are assigned by code.",
+            "NO_EVIDENCE applies only to unbound prose. MIXED_INTERPRETATION applies only to Results. "
+            "Reassess the supplied evidence; never erase a valid finding merely to pass validation.",
+        ])
+        feedback["allowed_issue_codes"] = [code for code in SEVERITIES
+                                           if (code == "NO_EVIDENCE") == (context["claim_id"] is None)
+                                           and (code != "MIXED_INTERPRETATION" or context["section"] == "results")]
+        return feedback
+    try:
+        validate_revision(context, placeholders, candidate, claim)
+    except (ValueError, TypeError) as exc:
+        if str(exc) not in errors:
+            errors.append(str(exc))
+    feedback["required_placeholder_counts"] = dict(Counter(re.findall(REVISION_TOKEN, context["sentence"])))
+    feedback["preserved_identifiers"] = revision_identifiers(context["sentence"])
+    actions.extend([
+        "Set replacement to revised prose. Preserve every original VALUE/CITATION placeholder with its exact count; "
+        "do not rename, remove, duplicate or manufacture slots.",
+        "Keep the exact existing dataset/model identifiers listed in preserved_identifiers. Their digits are names, "
+        "not new measurements. Do not remove SST-2 merely to avoid a numeric error. "
+        "For unbound NO_EVIDENCE prose, removing the entire unsupported sentence is allowed.",
+        "Remove added numbers and spelled-out quantities (e.g. three runs). For a sample-size limitation use "
+        "'a limited number of runs'; do not invent a new count or turn it into words to bypass binding.",
+        "Remove added TeX commands/comments, citation keys and resource names. Use existing CITATION slots only. "
+        "Keep comparison direction, negative findings, immutable_core and the original or weaker hedge.",
+        "A revision is restricted prose, not a new LaTeX section. Write 'and' instead of introducing &, "
+        "'percent' only for an already validated percent unit instead of %, and preserve original escaped "
+        "identifiers/placeholder slots. Do not introduce dollar delimiters, literal braces or new commands. "
+        "Literal underscores in permitted prose are escaped by the local syntax layer after evidence checks.",
+    ])
+    hedge = claim.hedge if claim else "none"
+    examples = []
+    if "immutable_core" in context:
+        examples = [context["immutable_core"] + suffix for suffix in context["allowed_suffixes"]]
+    elif claim:
+        suffix = (" These observations are based on a limited number of runs."
+                  if any(i["code"] == "MISSING_LIMITATION" for i in context["issues"])
+                  else " This observation is limited to the evaluated setting.")
+        examples = [context["sentence"] + suffix]
+    else:
+        examples = [""]
+    feedback["validated_response_examples"] = []
+    for replacement in examples:
+        example = {**feedback["required_identity"], "replacement": replacement, "hedge": hedge}
+        try:
+            validate_revision(context, placeholders, example, claim)
+        except ValueError:
+            continue
+        feedback["validated_response_examples"].append(example)
+    feedback["example_scope"] = "Examples pass structural rules; semantic adequacy still requires the next review."
+    return feedback
 
 
 def markdown(report, metadata):

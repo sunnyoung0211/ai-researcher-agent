@@ -1,5 +1,42 @@
 # Writing: independent Writer and evidence-aware Stage
 
+`latex_syntax.py` handles common literal characters across claim planning, section
+generation, restricted revision and compile repair. Unambiguous prose characters
+(`_`, `&`, `#`, `^`, and numeric `%`) receive deterministic escaping before the
+usual evidence, citation and command checks. Existing escapes, math subscripts and
+powers, alignment separators, nonbreaking spaces, verbatim text, citation/label/path
+arguments and claim/value placeholders retain their TeX meaning. Unmatched math
+delimiters and braces, ambiguous inline comments and unsupported commands require
+explicit correction; literal dollar/backslash/tilde/brace examples are included in
+the generation instructions. Structural TeX is never globally string-replaced.
+
+Retry feedback includes the prior response, error lines, explicit repair actions,
+literal replacements and a complete example only when normal validation passes.
+The next request asks for a fresh full response; rejected compile repairs include
+their response and reason in the next attempt. An unchanged compile repair is
+rejected. Examples are guidance, not fabricated model responses.
+
+`syntax_recovery.py` repairs exact generated legacy sections and bound claim text
+together when resuming source generation/compilation. It preserves numeric values,
+evidence selectors, model call IDs and historical attempt journals. All original
+and replacement bytes are saved in a replayable `paper/.writing/pending-syntax.json`
+transaction and `syntax-repair-<id>.json` receipt before installation. A conflicting
+human edit requires the existing reconciliation flow. Recovery invalidates the old
+build and recompiles, without resetting model-attempt budgets or rerunning training.
+The deterministic syntax operation is disclosed in the generated AI-use statement.
+
+Numeric claim correction includes every rejected literal, including significance
+cutoffs such as `p<0.05`. The retry context provides complete replacement examples
+checked against the frozen evidence, with all existing value placeholders retained.
+These guide a fresh model reply; they are never installed as fallback manuscript
+text. Feedback-only changes do not invalidate already accepted claim bindings.
+
+Provider HTTP errors are retained as `call_failed` with the original reason and
+HTTP status. They require an explicit recovery decision, survive restarts and do
+not imply zero charges. A provider location rejection requires a model service
+available to the user's region/account; manuscript corrections cannot resolve it.
+An actual interrupted process still retains the existing uncertain-call recovery.
+
 `Writer(root, bundle, llm=ctx.llm, skills=ctx.skills)` is used by the real Stage below;
 it does not import StageContext or implement a Stage. The only factual input is a
 detached EvidenceBundle. Without `claims`, Writer serves `evidence_check=false`: direct numeric prose is allowed.
@@ -300,7 +337,7 @@ False runtime retains the six phases above. The existing `evidence_check` field 
 mode; switching a populated paper tree between modes fails explicitly.
 
 `claims.py` owns strict planner schemas and calls are orchestrated by Stage through
-`writing/claims v1`, role `writing.claims`, tier strong. The planner sees frozen approved
+`writing/claims v3` (older versions remain pinnable), role `writing.claims`, tier strong. The planner sees frozen approved
 idea/plan/logs, all selected comparisons, exact validated Figures, safe runtime and
 Literature snapshots. It proposes selectors and `[[NAME]]` placeholders, never trusted
 ValueRefs, rendered values, formats, archive versions or IDs. Code assigns ordered
@@ -311,11 +348,44 @@ Figure scale. Unknown/conflicting units fail; no percentage inference is made.
 
 Every hypothesis and selected comparison/contrast must retain a Results observation,
 including unfavorable/non-significant evidence. Interpretations require a hedge and
-cannot enter Results. Binding errors receive at most one correction call, preserving
-slot order/count. Invalid optional slots may be dropped only with complete coverage;
-structurally invalid gateway responses fail closed. Persisted planning responses are
-reused before binding. Installation receipts compare old/new bytes and reject human
+cannot enter Results. The initial window permits generation and one correction,
+preserving slot order/count. A rejected candidate is never installed or silently dropped.
+Correction requests include the previous candidate, per-slot paths/errors, allowed plan
+parameter selectors, exact comparison examples and remaining coverage requirements.
+After exhaustion/interruption, the existing Questions flow requires retry/end. Retry
+authorizes one further call, includes the latest repair feedback and a durable attempt
+number to prevent cache replay of an identical failed request. No skip option bypasses
+required evidence. Accepted responses alone can be reused without another call.
+Old response receipts remain unchanged; migration counts their calls toward the window.
+Installation receipts compare old/new bytes and reject human
 conflicts, including partial multi-file installation recovery.
+
+Claim templates are checked for raw percent comments, unbalanced braces and common
+display-unit errors before becoming immutable. Signed `diff_mean` values denote a-b;
+they cannot be phrased as unsigned reductions or relative percentage improvements.
+Percentage-point wording requires an exact validated percent Figure presentation.
+These conservative presentation checks do not replace the later scientific review.
+Repair feedback includes each placeholder's ordered contrast, display scale/unit,
+resolved value and replacement sentence example. The model rewrites the template,
+then the same binding/coverage checks run again; error messages alone are not a repair.
+If changed binding rules invalidate an already installed claim plan, the original
+candidate is supplied as repair input on the new basis. Its historical receipts remain
+unchanged. A bound-claim syntax failure is blocked before a section-model call.
+
+`writing/section v4` corrections carry the previous rejected payload, specific repair
+actions, required markers and durable attempt number. A manual retry therefore sends
+a new correction request instead of replaying an identical cached failure. Existing
+attempt limits, explicit retry/end decisions and model budget controls still apply.
+
+Approved dataset/model identifiers such as `SST-2` do not count as literal measurements.
+Numeric configuration facts in Method/Setup use `plan_parameters`, e.g.
+`{"name":"EPOCHS","experiment_id":"E1","parameter":"epochs"}` with `[[EPOCHS]]`.
+Code reads the finite numeric value from the exact approved experiment's `fixed`
+configuration and retains its version/parameter in plan evidence. Defaults and grid
+choices are not inferred. Measured results still require Aggregate-backed `values`.
+Comparative claims require nonempty `values` from their comparison's Aggregate.
+Aggregate selectors allow group/metric/eval_condition; plan selectors allow a checked
+`experiments` list; other evidence types use null. Shared/core schemas are unchanged.
 
 `claims.jsonl` is canonical JSONL in planner slot order. Each `Claim.text` includes the
 exact `\claim{CLn}{...}` wrapper. `air_values.tex` contains sorted code-owned numeric
@@ -377,7 +447,7 @@ versioned by this patch. `audit()` remains deferred to Phase 3.
 
 See `examples/writing/final` for real TeX/FakeLLM reproduction. Shared
 models, dependencies, engine and StageContext are unchanged. `latex-writing@0.3.0`
-and `writing/section v3` describe both modes; `claim-review@0.1.0` owns semantic policy.
+and `writing/section v4` describe both modes; `claim-review@0.1.0` owns semantic policy.
 
 
 ## Phase 2B-2: semantic review and bounded targeted revision
@@ -409,7 +479,7 @@ untrusted and fail closed; they do not become Issues or clean verdicts. Determin
 issues cannot be deleted, downgraded or overridden. `evidence.check/trace` remain
 model-free, and `audit()` remains NotImplemented.
 
-`writing/revise v1` / `writing.reviser` / strong receives one exact target, issues,
+`writing/revise v2` / `writing.reviser` / strong receives one exact target, issues,
 bounded scope and VALUE/CITATION placeholders. Code checks placeholder multiplicities and
 restores the same macros, IDs, ValueRefs, Comparison and EvidenceLinks. Only wording,
 a more cautious hedge and code-computed locations change. For comparative Claims
@@ -424,6 +494,27 @@ lexical guard still applies to non-comparative Claims; complete Writer validatio
 Literal prose revisions cannot introduce TeX commands, citations, figures or numeric
 literals. Code preserves existing citation/reference commands via placeholders; other complex
 macro wording may require human editing.
+Exact numeric dataset/model identifiers already present in the code-owned original
+sentence (e.g. SST-2) retain their spelling and multiplicity; they are not newly
+authored measurements. New/renamed identifiers, numeric literals and newly spelled-out
+quantities remain blocked. A sample-size caveat can use qualitative wording such as
+"a limited number of runs" without manufacturing another value slot.
+
+Reviewer and reviser failures now call the model again with the rejected payload,
+exact sentence/claim identity, field repair actions and a durable attempt number.
+Reviser feedback includes exact placeholder counts, preserved names and candidate
+response examples checked by the same structural validator. Examples are guidance,
+not automatic replacement text or a substitute for subsequent semantic review.
+Only a validated new response is accepted; exhaustion/interruption still requires
+the existing human retry/skip/end decision and preserves project budget limits.
+
+An in-progress revision can continue after this policy update without discarding its
+accepted prefix or opening a fresh attempt window. Reuse requires exact frozen inputs,
+anchors and Claim identities; the old review responses and combined report are locally
+revalidated. Model/skill/reviewer-prompt changes still invalidate review. The immutable
+reviser v1-to-v2 guidance upgrade is recorded in continuation_routes; other prompt or
+model changes retain normal invalidation. Original routing, failures and review reports
+remain inspectable. Changed or invalid review evidence cannot use this recovery path.
 Unbound NO_EVIDENCE sentences can be removed/rephrased without creating Claims.
 No-op revisions stop for human inspection. Hard evidence errors anywhere disable prose
 revision for that round; wording-oriented deterministic issues are conservatively left

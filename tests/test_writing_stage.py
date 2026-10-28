@@ -104,7 +104,7 @@ def test_control_arm_engine_artifacts_and_exact_sources(writing):
     assert len(writing_calls(e)) == 8 and len(e.llm.backend.calls) == 10
     assert [context_of(c)["section"] for c in writing_calls(e)] == list(GENERATION_ORDER)
     for call in writing_calls(e):
-        assert call.schema_name == "SectionOutput" and call.role == "writing.writer" and call.prompt_version == 3
+        assert call.schema_name == "SectionOutput" and call.role == "writing.writer" and call.prompt_version == 4
         assert context_of(call)["figures"] == {fid: f"figures/{fid}.pdf" for fid in ("fig_c1", "fig_c2")}
     for a in bundle.aggregates:
         fid = f"fig_{a.aggregate_id.lower()}"

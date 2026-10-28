@@ -26,6 +26,7 @@ from airesearcher.services import literature
 from airesearcher.skills.loader import SkillLoader
 
 from . import claims as binding
+from . import latex_syntax
 from ._latex import TemplateError, _inactive_spans, _is_escaped, active_text, commands, relative_name, safe_path
 from .bundle import EvidenceBundle
 from .compile import compile_paper
@@ -252,6 +253,9 @@ class Writer:
         if self.claims is not None:
             binding.validate_bound_section(text, self.claims, section)
         try:
+            repair = latex_syntax.inspect(text)
+            if repair.errors or repair.replacements:
+                raise ValidationFailed("Invalid LaTeX fragment: " + repair.message())
             text.encode("utf-8")
             if any(ord(c) < 32 and c not in "\r\n\t" for c in text):
                 raise ValidationFailed("Control characters in LaTeX fragment")
@@ -347,10 +351,63 @@ class Writer:
             ).encode("utf-8")
         )
 
-    def request_section(self, section: str, *, prompt_version: int | None = None, rejection_reason=""):
+    def section_correction(self, section, previous, attempt_number):
+        reason = previous.get("reason", "")
+        payload = previous.get("response", previous.get("raw"))
+        syntax = None
+        if isinstance(payload, dict) and isinstance(payload.get("latex"), str):
+            syntax = latex_syntax.feedback(payload["latex"])
+        errors = [reason]
+        if syntax:
+            errors.extend(syntax["errors"])
+        actions = [
+            "Return a NEW complete SectionOutput JSON for this section, not a patch or error explanation.",
+            "Keep every assigned [[CLAIM:CLn]] marker exactly once; do not edit bound claims or invent measurements.",
+            latex_syntax.RULES,
+        ]
+        if syntax or "brace" in reason.lower() or "LaTeX" in reason:
+            actions.append(r"Balance every unescaped { with }. Escape literal percent signs as \%; "
+                           "do not use comments to hide text or closing groups. Remove unsupported LaTeX commands.")
+        if "ValueRef" in reason or "number" in reason.lower():
+            actions.append("Remove the unbound experimental numbers named in the error. Express those results "
+                           "only through the assigned claim markers; do not replace them with invented values.")
+        if "citation" in reason.lower():
+            actions.append("Use only allowed keys in citation_table with a directly braced cite command.")
+        feedback = {"attempt_number": attempt_number, "previous": payload, "errors": errors,
+                    "repair_actions": actions,
+                    "required_claim_markers": self.section_context(section).get("claim_markers", [])}
+        if syntax:
+            feedback["latex_correction"] = syntax
+        if syntax and "suggested_latex" in syntax:
+            candidate = {**payload, "latex": syntax["suggested_latex"]}
+            try:
+                self.validate_generated(section, candidate)
+            except (ValueError, ValidationFailed) as exc:
+                feedback["remaining_errors_after_syntax_repair"] = [str(exc)]
+                feedback["repair_actions"].append(
+                    "Also repair remaining_errors_after_syntax_repair; escaping alone does not satisfy "
+                    "marker, numeric evidence, citation or safety checks. Apply the given replacements "
+                    "and return a fresh complete section."
+                )
+            else:
+                feedback["validated_response_example"] = candidate
+        return feedback
+
+    def request_section(self, section: str, *, prompt_version: int | None = None, rejection_reason="", correction=None):
         self._provenance()
+        for claim in self.claims or []:
+            if claim.section != section:
+                continue
+            errors = binding.latex_errors(claim.text)
+            repair = latex_syntax.inspect(claim.text, claim=True)
+            if repair.errors or repair.replacements:
+                errors.append(repair.message())
+            if errors:
+                raise ValueError(f"Bound claim {claim.claim_id} must be rebound before section generation: "
+                                 + "; ".join(errors))
         context = self.section_context(section)
         context["rejection_reason"] = rejection_reason
+        context["correction"] = correction
         encoded = _json(context)
         return self.llm.complete(
             role="writing.writer",
@@ -361,7 +418,7 @@ class Writer:
             max_retries=0 if self.claims is not None else 2,
             variables={
                 "section": section,
-                "skill_rules": self.skill.instructions,
+                "skill_rules": self.skill.instructions + "\n" + latex_syntax.RULES,
                 "skill_ref": self.skill.ref,
                 "evidence": LLMGateway.wrap_untrusted(encoded, f"bundle:{section}"),
             },
@@ -372,6 +429,10 @@ class Writer:
 
     def validate_generated(self, section, parsed):
         output = SectionOutput.model_validate(parsed)
+        try:
+            output = output.model_copy(update={"latex": latex_syntax.normalize(output.latex)})
+        except (ValueError, TemplateError) as exc:
+            raise ValidationFailed(f"Invalid LaTeX fragment: {exc}") from exc
         if self.claims is not None:
             output = output.model_copy(update={"latex": binding.insert_markers(output.latex, self.claims, section)})
         if self.claims is not None:
