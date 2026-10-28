@@ -1,6 +1,6 @@
 {
   "checkpoint_id": "ck-000031",
-  "saved_at": "2026-10-10T11:38:16.271822+08:00",
+  "saved_at": "2026-10-28T14:08:35.586797+08:00",
   "state": "Writing",
   "resume_to": null,
   "pending_approval": null,
@@ -19,7 +19,7 @@
     "log": {
       "artifact_id": "logs/round_1.md",
       "version": 1,
-      "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+      "sha256": "74d575ca66757cd0373c4b78aa2e39cc496dbb0ae4866f115ef5bda23b5b70a3"
     }
   },
   "stale": [],
@@ -31,7 +31,7 @@
       {
         "artifact_id": "logs/round_1.md",
         "version": 1,
-        "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+        "sha256": "74d575ca66757cd0373c4b78aa2e39cc496dbb0ae4866f115ef5bda23b5b70a3"
       }
     ]
   },
@@ -43,25 +43,19 @@
         "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
       ]
     },
-    "_label": "论文（假实现）：画图与证据包",
-    "_progress": {
-      "done": 1,
-      "total": 4,
-      "unit": "steps"
-    },
     "plan": {
       "idea_sha": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
     },
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "f078444692d435d222b936823ca1a88eaa8ec4b8",
+      "commit": "26b711bb6e6e4671192d67da05eb2c0840bddad7",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113808-e173"
+            "r-20261028-140827-7e61"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -76,7 +70,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261010-113808-6128"
+            "r-20261028-140827-c4a7"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -91,7 +85,7 @@
         "E1-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261010-113809-6926"
+            "r-20261028-140829-b75a"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -106,7 +100,7 @@
         "E2-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113809-0426"
+            "r-20261028-140829-ef56"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -121,7 +115,7 @@
         "E2-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261010-113811-02ea"
+            "r-20261028-140830-766d"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -136,8 +130,8 @@
         "E2-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261010-113811-67d8",
-            "r-20261010-113812-86a1"
+            "r-20261028-140830-3f33",
+            "r-20261028-140832-cc8e"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -148,12 +142,12 @@
             "fail_mode": "none"
           },
           "eval_condition": "final",
-          "retry_of": "r-20261010-113811-67d8"
+          "retry_of": "r-20261028-140830-3f33"
         },
         "E3-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261010-113813-5303"
+            "r-20261028-140832-868f"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -168,7 +162,7 @@
         "E3-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261010-113814-a639"
+            "r-20261028-140833-170f"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -183,7 +177,7 @@
         "E3-seed=2": {
           "status": "done",
           "runs": [
-            "r-20261010-113814-daa4"
+            "r-20261028-140833-04dd"
           ],
           "experiment_id": "E3",
           "kind": "ablation",
@@ -208,20 +202,26 @@
       }
     },
     "writing": {
-      "basis": "17c1c327a86f2a56",
-      "phase": "write",
+      "basis": "8b81377e868bf529",
+      "phase": "compile",
       "fig_refs": [
         {
           "artifact_id": "artifacts/figures/fig_c1",
           "version": 1,
-          "sha256": "32c2b6dd00a671c8cb63b46acc61f99a2943d3c4c99958f045a4983ad7fe642d"
+          "sha256": "99ec51ff639d41615e39332651a1eaabea6197183cd124b066b90548df4758a9"
         },
         {
           "artifact_id": "artifacts/figures/fig_c2",
           "version": 1,
-          "sha256": "f4d21d47e2ae6e542000193ad991d40d9b60d3081d685e70225b79935c4158b0"
+          "sha256": "c93d22f4b1fc8326e84712e1773413282f9daf3b8f480b849ac9692df822469a"
         }
       ]
+    },
+    "_label": "论文（假实现）：撰写章节与论断",
+    "_progress": {
+      "done": 2,
+      "total": 4,
+      "unit": "steps"
     }
   },
   "consecutive_errors": 0,

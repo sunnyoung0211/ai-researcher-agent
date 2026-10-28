@@ -1,0 +1,244 @@
+{
+  "checkpoint_id": "ck-000033",
+  "saved_at": "2026-10-28T14:08:36.937917+08:00",
+  "state": "ManuscriptPending",
+  "resume_to": null,
+  "pending_approval": "ap-0005",
+  "pending_question": null,
+  "approved": {
+    "idea": {
+      "artifact_id": "idea/selected.md",
+      "version": 2,
+      "sha256": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "plan": {
+      "artifact_id": "plan/experiment_plan.md",
+      "version": 1,
+      "sha256": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2"
+    },
+    "log": {
+      "artifact_id": "logs/round_1.md",
+      "version": 1,
+      "sha256": "74d575ca66757cd0373c4b78aa2e39cc496dbb0ae4866f115ef5bda23b5b70a3"
+    }
+  },
+  "stale": [],
+  "feedback_approval_ids": [],
+  "entry": null,
+  "scratch": {
+    "idea": {
+      "phase": "submit",
+      "handled_feedback": "ap-0001",
+      "notes": [
+        "按用户意见修改（退回修改）：研究问题请写明每类样本数和主要指标"
+      ]
+    },
+    "plan": {
+      "idea_sha": "da042f112a87fd48fd901fff41188f5cc94dd1e70975bba04e66ac0ebcabef7f"
+    },
+    "experiment": {
+      "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
+      "plan_version": 1,
+      "commit": "26b711bb6e6e4671192d67da05eb2c0840bddad7",
+      "round": 1,
+      "tasks": {
+        "E1-seed=0": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140827-7e61"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E1-seed=1": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140827-c4a7"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E1-seed=2": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140829-b75a"
+          ],
+          "experiment_id": "E1",
+          "kind": "baseline",
+          "config": {
+            "method": "baseline",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=0": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140829-ef56"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=1": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140830-766d"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E2-seed=2": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140830-3f33",
+            "r-20261028-140832-cc8e"
+          ],
+          "experiment_id": "E2",
+          "kind": "main",
+          "config": {
+            "method": "main",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final",
+          "retry_of": "r-20261028-140830-3f33"
+        },
+        "E3-seed=0": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140832-868f"
+          ],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 0,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E3-seed=1": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140833-170f"
+          ],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 1,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        },
+        "E3-seed=2": {
+          "status": "done",
+          "runs": [
+            "r-20261028-140833-04dd"
+          ],
+          "experiment_id": "E3",
+          "kind": "ablation",
+          "config": {
+            "method": "ablation",
+            "seconds": 1.0,
+            "seed": 2,
+            "fail_mode": "none"
+          },
+          "eval_condition": "final"
+        }
+      },
+      "analysis": {
+        "aggregated_for": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
+        "comparisons": [
+          "C1",
+          "C2",
+          "all"
+        ],
+        "log_done": true,
+        "handled_feedback": "ap-0004"
+      }
+    },
+    "writing": {
+      "basis": "8b81377e868bf529",
+      "phase": "submit",
+      "fig_refs": [
+        {
+          "artifact_id": "artifacts/figures/fig_c1",
+          "version": 1,
+          "sha256": "99ec51ff639d41615e39332651a1eaabea6197183cd124b066b90548df4758a9"
+        },
+        {
+          "artifact_id": "artifacts/figures/fig_c2",
+          "version": 1,
+          "sha256": "c93d22f4b1fc8326e84712e1773413282f9daf3b8f480b849ac9692df822469a"
+        }
+      ],
+      "paper_ref": {
+        "artifact_id": "paper",
+        "version": 1,
+        "sha256": "44722d0a7963911a255c335da58cd51f6c39bdc5587154bec61d6c2532987af6"
+      },
+      "refs": {
+        "review": {
+          "artifact_id": "paper/review/review_v1.json",
+          "version": 1,
+          "sha256": "cd44b7875e8a0f9320623f53eed04dae8bee42bfa62653dac6d59fcecf9f1d05"
+        },
+        "compile": {
+          "artifact_id": "paper/build/compile_report.json",
+          "version": 1,
+          "sha256": "aa04c0014747035ab993c93705409d29fdc7a8b14410e7deac080ffdbbba5fec"
+        },
+        "claims": {
+          "artifact_id": "paper/claims.jsonl",
+          "version": 1,
+          "sha256": "6296da1a2d145a1b13a7d29b3c890962f44605438f5c4d332932b11415717205"
+        },
+        "pdf": {
+          "artifact_id": "paper/build/main.pdf",
+          "version": 1,
+          "sha256": "af06d5acf2fc2ce22a97c1339f14a4e4d4a6c24c8f710e0dd38b896f12036e65"
+        },
+        "review_path": "paper/review/review_v1.json"
+      }
+    }
+  },
+  "consecutive_errors": 0,
+  "last_event_seq": 92,
+  "answer": null,
+  "reason": "",
+  "rejected_approval": null
+}

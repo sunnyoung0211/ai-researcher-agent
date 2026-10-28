@@ -15,7 +15,7 @@
       "ref": {
         "artifact_id": "artifacts/aggregates/C1.json",
         "version": 1,
-        "sha256": "579765f917f1261ed5df6bb60d4f53435dcba11fc0c52443f09d6a94db606fc8"
+        "sha256": "3fab049220c59a6e0835b9cf9c247270a13175e46cc623dab70766ca7f23805f"
       }
     },
     {
@@ -23,7 +23,7 @@
       "ref": {
         "artifact_id": "artifacts/aggregates/C2.json",
         "version": 1,
-        "sha256": "7bab00803be48cd81d63454d88cc5bf041ba8feb91f43edd34b66d1814c80b5f"
+        "sha256": "deaa0e6f90225c62434bb4d7999fba0aaeca860bd32d6b4e057019ccec01d4d9"
       }
     }
   ],
@@ -31,7 +31,7 @@
     {
       "artifact_id": "logs/round_1.md",
       "version": 1,
-      "sha256": "ce3c61acdb3efbdb4997bf1aac24b617adf64630e2fc80e24f0e15b3e3b3ea7e"
+      "sha256": "74d575ca66757cd0373c4b78aa2e39cc496dbb0ae4866f115ef5bda23b5b70a3"
     }
   ],
   "papers": [
