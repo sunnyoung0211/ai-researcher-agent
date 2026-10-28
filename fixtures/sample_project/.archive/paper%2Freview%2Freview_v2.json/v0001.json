@@ -2,7 +2,7 @@
   "paper_ref": {
     "artifact_id": "paper",
     "version": 2,
-    "sha256": "9aadf60bd958eb2002856c31e27ca9afcb37b1111d1a3e40db6b58339fd950e9"
+    "sha256": "06549642f7a1cf8111c802494a6a7011bbf690a48220ef76b96aa99678106fea"
   },
   "mode": "full",
   "claims": [
@@ -98,5 +98,5 @@
     "contradicted": 1
   },
   "compile_ok": true,
-  "created_at": "2026-10-28T14:08:37.382376+08:00"
+  "created_at": "2026-10-28T14:28:18.850472+08:00"
 }

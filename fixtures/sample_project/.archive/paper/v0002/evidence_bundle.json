@@ -15,7 +15,7 @@
       "ref": {
         "artifact_id": "artifacts/aggregates/C1.json",
         "version": 1,
-        "sha256": "3fab049220c59a6e0835b9cf9c247270a13175e46cc623dab70766ca7f23805f"
+        "sha256": "c472c04796dba492c0bd2a657898a8bd5ba440d98a7d258ff82ad7259c2953ad"
       }
     },
     {
@@ -23,7 +23,7 @@
       "ref": {
         "artifact_id": "artifacts/aggregates/C2.json",
         "version": 1,
-        "sha256": "deaa0e6f90225c62434bb4d7999fba0aaeca860bd32d6b4e057019ccec01d4d9"
+        "sha256": "af6bc188f458d7c1ebd0a6482b3e9ea7796c1465e97fdc932f320589b803c8a8"
       }
     }
   ],
@@ -31,7 +31,7 @@
     {
       "artifact_id": "logs/round_1.md",
       "version": 1,
-      "sha256": "74d575ca66757cd0373c4b78aa2e39cc496dbb0ae4866f115ef5bda23b5b70a3"
+      "sha256": "c19dbfc128e23d135c0dabb7157883a7ad7aad59846f68271a8b52e5e516059f"
     }
   ],
   "papers": [

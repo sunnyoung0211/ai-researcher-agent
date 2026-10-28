@@ -1,6 +1,6 @@
 {
   "checkpoint_id": "ck-000015",
-  "saved_at": "2026-10-28T14:08:30.330491+08:00",
+  "saved_at": "2026-10-28T14:28:14.171933+08:00",
   "state": "Executing",
   "resume_to": null,
   "pending_approval": null,
@@ -34,13 +34,13 @@
     "experiment": {
       "plan_sha": "24211f4111e181abc3616a070d531748b4f9f8fb781bd5565d668f8984ba53a2",
       "plan_version": 1,
-      "commit": "26b711bb6e6e4671192d67da05eb2c0840bddad7",
+      "commit": "864149dc7e4d952cd6ce56d5f29325052837fac2",
       "round": 1,
       "tasks": {
         "E1-seed=0": {
           "status": "done",
           "runs": [
-            "r-20261028-140827-7e61"
+            "r-20261028-142811-f0ac"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -55,7 +55,7 @@
         "E1-seed=1": {
           "status": "done",
           "runs": [
-            "r-20261028-140827-c4a7"
+            "r-20261028-142811-6be3"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -68,9 +68,9 @@
           "eval_condition": "final"
         },
         "E1-seed=2": {
-          "status": "running",
+          "status": "done",
           "runs": [
-            "r-20261028-140829-b75a"
+            "r-20261028-142812-8631"
           ],
           "experiment_id": "E1",
           "kind": "baseline",
@@ -83,9 +83,9 @@
           "eval_condition": "final"
         },
         "E2-seed=0": {
-          "status": "running",
+          "status": "done",
           "runs": [
-            "r-20261028-140829-ef56"
+            "r-20261028-142812-d7a6"
           ],
           "experiment_id": "E2",
           "kind": "main",
@@ -98,8 +98,10 @@
           "eval_condition": "final"
         },
         "E2-seed=1": {
-          "status": "todo",
-          "runs": [],
+          "status": "running",
+          "runs": [
+            "r-20261028-142813-67dd"
+          ],
           "experiment_id": "E2",
           "kind": "main",
           "config": {
@@ -111,8 +113,10 @@
           "eval_condition": "final"
         },
         "E2-seed=2": {
-          "status": "todo",
-          "runs": [],
+          "status": "running",
+          "runs": [
+            "r-20261028-142813-f994"
+          ],
           "experiment_id": "E2",
           "kind": "main",
           "config": {
@@ -164,15 +168,15 @@
         }
       }
     },
-    "_label": "实验（假实现）：第 1 轮执行中（2/9）",
+    "_label": "实验（假实现）：第 1 轮执行中（4/9）",
     "_progress": {
-      "done": 2,
+      "done": 4,
       "total": 9,
       "unit": "runs"
     }
   },
   "consecutive_errors": 0,
-  "last_event_seq": 38,
+  "last_event_seq": 44,
   "answer": null,
   "reason": "",
   "rejected_approval": null
