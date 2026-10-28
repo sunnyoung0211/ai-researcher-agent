@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from typing import Literal
@@ -11,7 +12,8 @@ from pydantic import Field
 from airesearcher.core.models.claim import Issue
 
 from . import claims as binding
-from ._latex import active_text, commands
+from . import latex_syntax
+from ._latex import _is_escaped, active_text, commands
 
 REVIEW_PROMPT = "writing/review"
 REVISE_PROMPT = "writing/revise"
@@ -95,6 +97,102 @@ def sentence_spans(text):
         start = end
 
 
+def claim_spans(text, claims, section):
+    """Find exact active wrappers, with explicit diagnostics rather than next()."""
+    binding.validate_bound_section(text, claims, section)
+    clean = active_text(text)
+    spans = []
+    for claim in claims:
+        if claim.section != section:
+            continue
+        starts = [m.start() for m in re.finditer(re.escape(claim.text), text)
+                  if clean[m.start():m.start() + 6] == r"\claim"]
+        if len(starts) != 1:
+            raise ValueError(f"Bound claim {claim.claim_id} must occur exactly once in {section}")
+        spans.append((starts[0], starts[0] + len(claim.text), claim))
+    return sorted(spans, key=lambda item: item[0])
+
+
+def unbound_spans(text, bound):
+    """Subtract claim ranges; blanking alone is not a sentence boundary."""
+    remainder = active_text(text)
+    for start, end, _ in bound:
+        remainder = _blank(remainder, start, end)
+    for start, end in sentence_spans(remainder):
+        cursor = start
+        for left, right, _ in bound:
+            if right <= cursor or left >= end:
+                continue
+            if cursor < left:
+                fragment = remainder[cursor:left]
+                a, b = cursor + len(fragment) - len(fragment.lstrip()), cursor + len(fragment.rstrip())
+                if a < b and re.search(r"[A-Za-z\u4e00-\u9fff]", remainder[a:b]):
+                    yield a, b
+            cursor = max(cursor, right)
+        if cursor < end:
+            fragment = remainder[cursor:end]
+            a, b = cursor + len(fragment) - len(fragment.lstrip()), cursor + len(fragment.rstrip())
+            if a < b and re.search(r"[A-Za-z\u4e00-\u9fff]", remainder[a:b]):
+                yield a, b
+
+
+def require_unbound(text):
+    clean = active_text(text)
+    if any(not _is_escaped(clean, m.start()) for m in re.finditer(r"\\(?:claim|airval)\b", clean)):
+        raise ValueError("Unbound review/revision text contains a protected claim or value; "
+                         "rebuild non-overlapping review units before requesting any revision")
+
+
+def validate_units(review_units, sources, claims):
+    """Check offsets, identities and non-overlap before sending/editing any unit."""
+    ranges = {}
+    for unit in review_units:
+        section = unit["section"]
+        text = sources[section]
+        location = unit["location"]
+        a, b = location["start"], location["end"]
+        if (location["file"] != f"paper/sections/{section}.tex"
+                or type(a) is not int or type(b) is not int or not 0 <= a < b <= len(text)
+                or text[a:b] != unit["source"]):
+            raise ValueError("Review unit does not match its exact source anchor")
+        bound = claim_spans(text, claims, section)
+        if unit["claim_id"] is None:
+            require_unbound(unit["source"])
+            if any(a < end and start < b for start, end, _ in bound):
+                raise ValueError("Unbound review unit overlaps a protected claim; rebuild review boundaries")
+        elif not any(a == start and b == end and claim.claim_id == unit["claim_id"]
+                     and unit["sentence"] == inner(claim) for start, end, claim in bound):
+            raise ValueError("Bound review unit does not match its exact claim wrapper")
+        ranges.setdefault(section, []).append((a, b))
+    for section, spans in ranges.items():
+        spans.sort()
+        if any(right > next_left for (_, right), (next_left, _) in zip(spans, spans[1:], strict=False)):
+            raise ValueError(f"Review/revision ranges overlap in {section}; rebuild review boundaries")
+
+
+def reusable_responses(new_units, old):
+    """Reuse only identical contexts; never apply an answer to a shortened span."""
+    result, matches = {}, {}
+    for index, unit in enumerate(new_units):
+        positions = [i for i, previous in enumerate(old["units"]) if previous == unit]
+        if len(positions) != 1:
+            continue
+        previous_index = positions[0]
+        matches[index] = previous_index
+        if previous_index >= len(old.get("responses", [])):
+            continue
+        saved = old["responses"][previous_index]
+        if saved.get("rejected"):
+            continue
+        try:
+            if not saved.get("skipped"):
+                normalize(unit, saved["response"])
+        except (ValueError, KeyError):
+            continue
+        result[index] = saved
+    return result, matches
+
+
 def _scope(claim, bundle, checked):
     values = claim.values
     selected = []
@@ -143,24 +241,13 @@ def _scope(claim, bundle, checked):
 def units(source, claims, bundle, report):
     """Build exact anchors from the archived manuscript, never the mutable live paper."""
     result = []
+    sources = {}
     checks = {c.claim_id: c for c in report.claims}
     for section in binding.SECTIONS:
         text = (source / f"sections/{section}.tex").read_bytes().decode("utf-8")
-        binding.validate_bound_section(text, claims, section)
-        remainder = active_text(text)
-        bound = []
-        for claim in claims:
-            if claim.section != section:
-                continue
-            start = next(
-                m.start()
-                for m in re.finditer(re.escape(claim.text), text)
-                if remainder[m.start() : m.start() + 6] == r"\claim"
-            )
-            end = start + len(claim.text)
-            bound.append((start, end, claim))
-            remainder = _blank(remainder, start, end)
-        prose = list(sentence_spans(remainder))
+        sources[section] = text
+        bound = claim_spans(text, claims, section)
+        prose = list(unbound_spans(text, bound))
         targets = [(a, b, c) for a, b, c in bound]
         if section in {"abstract", "results", "conclusion"}:
             targets += [(a, b, None) for a, b in prose]
@@ -188,6 +275,7 @@ def units(source, claims, bundle, report):
             if len(binding.encoded(unit)) > 24000:
                 raise ValueError("semantic review unit exceeds bounded evidence context")
             result.append(unit)
+    validate_units(result, sources, claims)
     return result
 
 
@@ -196,6 +284,8 @@ def model_context(unit):
 
 
 def normalize(unit, raw):
+    if unit["claim_id"] is None:
+        require_unbound(unit.get("source", unit["sentence"]))
     response = ReviewResponse.model_validate(raw)
     if response.sentence != unit["sentence"] or response.claim_id != unit["claim_id"]:
         raise ValueError("untrusted semantic response: exact sentence/claim identity mismatch")
@@ -315,6 +405,8 @@ def comparison_revisable(unit, claim):
 
 
 def revision_context(unit, issues, claim):
+    if claim is None:
+        require_unbound(unit.get("source", unit["sentence"]))
     context = model_context(unit)
     sentence = unit["sentence"]
     placeholders = {}
@@ -338,27 +430,86 @@ def revision_context(unit, issues, claim):
         context.update(immutable_core=core, editable_suffix=shell, allowed_suffixes=list(COMPARISON_QUALIFIERS))
     context["scope"] = {k: v for k, v in context["scope"].items() if k not in {"values", "recomputed"}}
     context["allowed_placeholders"] = list(placeholders)
+    context["preserved_literal_escapes"] = dict(revision_literal_escapes(sentence))
     context["issues"] = [{"code": i.code, "detail": i.detail, "suggestion": i.suggestion} for i in issues]
     return context, placeholders
 
 
+REVISION_TOKEN = r"\[\[(?:VALUE|CITATION)_\d+\]\]"
+LITERAL_ESCAPE = re.compile(r"\\(?:[_&#%${}]|text(?:backslash|asciitilde|asciicircum)\{\})")
+QUANTITY_WORD = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|"
+    r"forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion)\b", re.I,
+)
+
+
+def revision_identifiers(sentence):
+    """Only exact numeric names already in the code-owned original are exempt."""
+    sentence = re.sub(REVISION_TOKEN, "", sentence)
+    names = binding.IDENTIFIER.findall(sentence)
+    names += re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:(?:[-_]|\\_)[A-Za-z0-9]+)+\b", sentence)
+    return sorted({name for name in names if re.search(r"\d", name)})
+
+
+def _identifier_pattern(name):
+    return r"(?<![\w-])" + re.escape(name) + r"(?![\w-])"
+
+
+def revision_literal_escapes(text):
+    """Only existing active literal glyph escapes may survive restricted revision."""
+    clean = active_text(text)
+    return Counter(m[0] for m in LITERAL_ESCAPE.finditer(clean) if not _is_escaped(clean, m.start()))
+
+
+def _revision_surface(text, original):
+    text, original = (re.sub(REVISION_TOKEN, "", value) for value in (text, original))
+    allowed = revision_literal_escapes(original)
+    actual = revision_literal_escapes(text)
+    for token, count in allowed.items():
+        if actual[token] != count:
+            raise ValueError(f"revision must preserve existing literal escape {token!r} exactly {count} time(s); "
+                             "copy it unchanged instead of removing, duplicating or double-escaping it")
+    for name in revision_identifiers(original):
+        pattern = _identifier_pattern(name)
+        if len(re.findall(pattern, text)) != len(re.findall(pattern, original)):
+            raise ValueError(f"revision must preserve the exact existing identifier {name!r} and its multiplicity")
+        text = re.sub(pattern, " ", text)
+    # Mask only glyph escapes inherited from the exact source, not arbitrary TeX
+    # commands or additional occurrences of an otherwise allowed escape.
+    clean = active_text(text)
+    text = LITERAL_ESCAPE.sub(
+        lambda m: " " * len(m[0]) if m[0] in allowed and not _is_escaped(clean, m.start()) else m[0], text
+    )
+    return text
+
+
 def validate_revision(context, placeholders, raw, claim):
+    if claim is None:
+        require_unbound(context["sentence"])
     response = RevisionResponse.model_validate(raw)
     if response.sentence != context["sentence"] or response.claim_id != context["claim_id"]:
         raise ValueError("revision exact sentence/claim identity mismatch")
     text = response.replacement
-    token = r"\[\[(?:VALUE|CITATION)_\d+\]\]"
+    token = REVISION_TOKEN
     expected = Counter(re.findall(token, context["sentence"]))
     actual = Counter(re.findall(token, text))
     if actual != expected:
         raise ValueError("revision must preserve exact value placeholder multiplicities")
-    surface = re.sub(token, "", text)
+    surface = _revision_surface(text, context["sentence"]) if text.strip() or claim else ""
     if "[[" in surface or "]]" in surface:
         raise ValueError("unknown revision placeholder")
     # Restrict revision to literal wording + existing value slots. Citations, figures,
     # TeX commands, comments and numbers cannot be manufactured or concealed.
-    if re.search(r"[\\{}%$#&^~]|(?<![\w])[-+]?\d+(?:\.\d+)?", surface):
-        raise ValueError("revision may not add commands, citations, figures or raw numbers")
+    forbidden = re.findall(r"[\\{}%$#&^~]|(?<![\w])[-+]?\d+(?:\.\d+)?", surface)
+    if forbidden:
+        raise ValueError("revision may not add commands, citations, figures or raw numbers; offending tokens: "
+                         + repr(forbidden))
+    original = _revision_surface(context["sentence"], context["sentence"])
+    new_quantities = Counter(QUANTITY_WORD.findall(surface.lower())) - Counter(QUANTITY_WORD.findall(original.lower()))
+    if new_quantities:
+        raise ValueError("revision may not add spelled-out numeric quantities: " + ", ".join(new_quantities)
+                         + "; use a qualitative limitation such as 'a limited number of runs' instead")
     if claim:
         if not text.strip():
             raise ValueError("bound Claim cannot be removed")
@@ -385,11 +536,88 @@ def validate_revision(context, placeholders, raw, claim):
             raise ValueError("revision cannot strengthen hedge")
         for placeholder, macro in placeholders.items():
             text = text.replace(placeholder, macro)
+        text = latex_syntax.normalize(text)
         revised = claim.model_copy(update={"text": f"\\claim{{{claim.claim_id}}}{{{text}}}", "hedge": response.hedge})
         return revised.text, revised
     if response.hedge != "none":
         raise ValueError("unbound prose has no Claim hedge field")
-    return text, None
+    return latex_syntax.normalize(text), None
+
+
+def correction_context(context, previous, attempt_number, *, claim=None, placeholders=None, reviewing=False):
+    """A new request includes the rejected candidate, concrete edits and checked examples."""
+    candidate = previous.get("response", previous.get("raw"))
+    if isinstance(candidate, str):
+        try:
+            block = re.search(r"```(?:json)?\s*(.*?)```", candidate, re.S)
+            candidate = json.loads(block[1] if block else candidate)
+        except ValueError:
+            pass
+    errors = [previous.get("reason", "Unrecorded/interrupted response; return complete schema JSON")]
+    actions = [
+        "Return NEW complete schema JSON. Echo the exact supplied sentence and claim_id, not an edited target.",
+        "Use the rejected candidate below as correction input; repair every reported field before returning it.",
+    ]
+    feedback = {"attempt_number": attempt_number, "previous": candidate, "errors": errors,
+                "required_identity": {k: context[k] for k in ("sentence", "claim_id")}, "repair_actions": actions}
+    if reviewing:
+        actions.extend([
+            "Return only sentence, claim_id and issues. Each issue has only code, detail and suggestion; "
+            "severity/support/provenance are assigned by code.",
+            "NO_EVIDENCE applies only to unbound prose. MIXED_INTERPRETATION applies only to Results. "
+            "Reassess the supplied evidence; never erase a valid finding merely to pass validation.",
+        ])
+        feedback["allowed_issue_codes"] = [code for code in SEVERITIES
+                                           if (code == "NO_EVIDENCE") == (context["claim_id"] is None)
+                                           and (code != "MIXED_INTERPRETATION" or context["section"] == "results")]
+        return feedback
+    try:
+        validate_revision(context, placeholders, candidate, claim)
+    except (ValueError, TypeError) as exc:
+        if str(exc) not in errors:
+            errors.append(str(exc))
+    feedback["required_placeholder_counts"] = dict(Counter(re.findall(REVISION_TOKEN, context["sentence"])))
+    feedback["preserved_identifiers"] = revision_identifiers(context["sentence"])
+    feedback["preserved_literal_escapes"] = dict(revision_literal_escapes(context["sentence"]))
+    actions.extend([
+        "Set replacement to revised prose. Preserve every original VALUE/CITATION placeholder with its exact count; "
+        "do not rename, remove, duplicate or manufacture slots.",
+        "Keep the exact existing dataset/model identifiers listed in preserved_identifiers. Their digits are names, "
+        "not new measurements. Do not remove SST-2 merely to avoid a numeric error. "
+        "For unbound NO_EVIDENCE prose, removing the entire unsupported sentence is allowed.",
+        "Remove added numbers and spelled-out quantities (e.g. three runs). For a sample-size limitation use "
+        "'a limited number of runs'; do not invent a new count or turn it into words to bypass binding.",
+        "Remove added TeX commands/comments, citation keys and resource names. Use existing CITATION slots only. "
+        "Keep comparison direction, negative findings, immutable_core and the original or weaker hedge.",
+        r"Copy every preserved_literal_escapes entry exactly with its original count, e.g. keep train\_seconds "
+        r"and a source \% unchanged. These are existing literal glyphs, not new commands. Do not change \_ "
+        r"to _ or \\_, and do not add other commands or extra escape occurrences.",
+        "A revision is restricted prose, not a new LaTeX section. Write 'and' instead of introducing &, "
+        "'percent' only for an already validated percent unit instead of %, and preserve original escaped "
+        "identifiers/placeholder slots. Do not introduce dollar delimiters, literal braces or new commands. "
+        "Literal underscores in permitted prose are escaped by the local syntax layer after evidence checks.",
+    ])
+    hedge = claim.hedge if claim else "none"
+    examples = []
+    if "immutable_core" in context:
+        examples = [context["immutable_core"] + suffix for suffix in context["allowed_suffixes"]]
+    elif claim:
+        suffix = (" These observations are based on a limited number of runs."
+                  if any(i["code"] == "MISSING_LIMITATION" for i in context["issues"])
+                  else " This observation is limited to the evaluated setting.")
+        examples = [context["sentence"] + suffix]
+    else:
+        examples = [""]
+    feedback["validated_response_examples"] = []
+    for replacement in examples:
+        example = {**feedback["required_identity"], "replacement": replacement, "hedge": hedge}
+        try:
+            validate_revision(context, placeholders, example, claim)
+        except ValueError:
+            continue
+        feedback["validated_response_examples"].append(example)
+    feedback["example_scope"] = "Examples pass structural rules; semantic adequacy still requires the next review."
+    return feedback
 
 
 def markdown(report, metadata):
