@@ -568,9 +568,9 @@ class ExperimentStage:
 
     @staticmethod
     def _ready(entry, s):
-        if not s["simulation"] and not entry["trial"]:
-            if any(e["trial"] and not e.get("coder_trial") and e["state"] != "done" for e in s["entries"].values()):
-                return False
+        # Gate each experiment on its own successful trial and completed parents.
+        # A global all-trials barrier deadlocks when a downstream trial itself
+        # depends on an upstream experiment's formal runs.
         if any(
             e["state"] != "done"
             for e in s["entries"].values()
@@ -579,7 +579,7 @@ class ExperimentStage:
             return False
         return entry["trial"] or (
             s["entries"][f"trial-{entry['experiment_id']}"]["state"] == "done"
-            and s["entries"][f"trial-{entry['experiment_id']}"]["success_commit"] == s["commit"]
+            and s["entries"][f"trial-{entry['experiment_id']}"].get("success_commit") == s["commit"]
         )
 
     @staticmethod

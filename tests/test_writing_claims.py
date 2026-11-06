@@ -67,6 +67,127 @@ def test_bind_exact_values_and_macros(bound_inputs):
     assert values_tex(claims) == values_tex(list(reversed(claims)))
 
 
+def test_approved_dataset_identifier_is_not_a_measurement(bound_inputs):
+    from airesearcher.stages.writing.claims import bind_plan
+
+    p, bundle, figures = bound_inputs
+    bundle = bundle.model_copy(deep=True)
+    bundle.idea.text += "\nApproved dataset: SST-2.\n"
+    plan = valid_plan(bundle)
+    plan["claims"][0]["text_template"] += r" We evaluate on \textsc{SST-2}."
+    claims, errors = bind_plan(p.root, plan, bundle, figures)
+    assert not errors
+    assert "SST-2" in claims[0].text
+    plan["claims"][0]["text_template"] += " Accuracy is 99.9 percent."
+    _, errors = bind_plan(p.root, plan, bundle, figures)
+    assert any("literal claim numbers" in e for e in errors)
+
+
+def test_comparative_claim_explains_empty_values(bound_inputs):
+    from airesearcher.stages.writing.claims import bind_plan
+
+    p, bundle, figures = bound_inputs
+    plan = valid_plan(bundle)
+    plan["claims"][0].update(text_template="The first method performs better.", values=[])
+    _, errors = bind_plan(p.root, plan, bundle, figures)
+    assert any("nonempty values" in e for e in errors)
+
+
+def test_plan_selector_reports_allowed_fields(bound_inputs):
+    from airesearcher.stages.writing.claims import bind_plan
+
+    p, bundle, figures = bound_inputs
+    plan = valid_plan(bundle)
+    plan["claims"][0]["evidence"].append(
+        {"type": "plan", "ref": bundle.plan_ref.artifact_id, "selector": {"group": {}}}
+    )
+    _, errors = bind_plan(p.root, plan, bundle, figures)
+    assert any("plan evidence selector" in e and "experiments" in e for e in errors)
+
+
+def method_plan(bundle):
+    plan = valid_plan(bundle)
+    plan["claims"].append({
+        "section": "method", "type": "method_fact", "statement_kind": "observation",
+        "hedge": "none", "importance": "minor", "text_template": "The approved duration is [[SECONDS]] seconds.",
+        "values": [], "comparison": None,
+        "plan_parameters": [{"name": "SECONDS", "experiment_id": "E1", "parameter": "seconds"}],
+        "evidence": [{"type": "plan", "ref": bundle.plan_ref.artifact_id, "selector": {"experiments": ["E1"]}}],
+    })
+    return plan
+
+
+def test_configuration_numbers_come_from_exact_approved_plan(bound_inputs):
+    from airesearcher.stages.writing.claims import bind_plan
+
+    p, bundle, figures = bound_inputs
+    plan = method_plan(bundle)
+    # The unapproved working copy cannot supply new parameter values.
+    current = p.root / bundle.plan_ref.artifact_id
+    current.write_text(current.read_text(encoding="utf-8").replace("seconds: 1.0", "seconds: 999.0"), encoding="utf-8")
+    claims, errors = bind_plan(p.root, plan, bundle, figures)
+    assert not errors
+    fact = claims[-1]
+    assert "1.0 seconds" in fact.text and "999" not in fact.text
+    assert fact.values == [] and "plan_parameters" not in fact.model_dump()
+    link = next(e for e in fact.evidence if "Code-resolved" in e.note)
+    assert link.version == bundle.plan_ref.version and '"parameter": "seconds"' in link.note
+
+
+@pytest.mark.parametrize("damage", ["experiment", "parameter", "scope", "literal", "duplicate", "rendered", "results"])
+def test_plan_parameter_does_not_bypass_evidence_checks(bound_inputs, damage):
+    from airesearcher.stages.writing.claims import bind_plan
+
+    p, bundle, figures = bound_inputs
+    plan = method_plan(bundle)
+    fact = plan["claims"][-1]
+    if damage == "experiment":
+        fact["plan_parameters"][0]["experiment_id"] = "E999"
+    elif damage == "parameter":
+        fact["plan_parameters"][0]["parameter"] = "accuracy"
+    elif damage == "scope":
+        fact["evidence"][0]["selector"]["experiments"] = ["E2"]
+    elif damage == "literal":
+        fact["text_template"] += " It achieved accuracy 99.9."
+    elif damage == "duplicate":
+        fact["plan_parameters"].append(fact["plan_parameters"][0].copy())
+    elif damage == "rendered":
+        fact["plan_parameters"][0]["value"] = 999
+    else:
+        fact.update(section="results", type="numeric")
+    _, errors = bind_plan(p.root, plan, bundle, figures)
+    assert any(e.startswith("CL3:") for e in errors)
+
+
+def test_actionable_correction_covers_each_bad_field(bound_inputs):
+    from airesearcher.stages.writing.claims import correction_context
+
+    p, bundle, figures = bound_inputs
+    plan = method_plan(bundle)
+    plan["claims"][0].update(text_template="The first method is better.", values=[])
+    plan["claims"][-1].update(text_template="Training lasts 1.0 seconds.", plan_parameters=[])
+    feedback = correction_context(p.root, plan, "failed", bundle, figures)
+    repairs = {r["claim_id"]: r for r in feedback["repairs"]}
+    assert repairs["CL1"]["path"] == "claims[0]"
+    assert repairs["CL1"]["value_example"]["aggregate_id"] == "C1"
+    comp = plan["claims"][0]["comparison"]
+    assert repairs["CL1"]["value_example"]["contrast"] == {"a": comp["a"], "b": comp["b"]}
+    assert repairs["CL3"]["parameter_examples"] == [{"name": "SECONDS", "experiment_id": "E1", "parameter": "seconds"}]
+    assert len(feedback["required_results"]) == 2 and feedback["previous"] == plan
+
+
+def test_schema_rejected_evidence_still_receives_repair_feedback(bound_inputs):
+    from airesearcher.stages.writing.claims import correction_context
+
+    p, bundle, figures = bound_inputs
+    plan = method_plan(bundle)
+    plan["claims"][-1]["evidence"] = 7
+    feedback = correction_context(p.root, plan, "Schema rejected evidence", bundle, figures)
+    assert any("CL3" in e for e in feedback["errors"])
+    repair = next(r for r in feedback["repairs"] if r["claim_id"] == "CL3")
+    assert repair["actions"] and repair["parameter_examples"]
+
+
 @pytest.mark.parametrize(
     "field,value", [("rendered", "999"), ("key", "invented"), ("aggregate_version", 9), ("fmt", {"scale": 999})]
 )
