@@ -80,7 +80,7 @@ def inspect(text: str, *, claim=False) -> Repair:
         return Repair(text, [], ["TeX character-code escape syntax is unsupported; remove ^^ escapes"])
     while True:
         found = None
-        for start, end, literal in _inactive_spans(working):
+        for start, _end, literal in _inactive_spans(working):
             if literal:
                 continue
             line = max(working.rfind("\n", 0, start), working.rfind("\r", 0, start)) + 1

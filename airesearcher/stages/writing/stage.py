@@ -1038,7 +1038,9 @@ class WritingStage:
             return Continue("Human source edit before revision; preserve and recheck")
         review = _receipt(ctx, "semantic-" + s["semantic_basis"])
         report = CheckReport.model_validate(review["report"])
-        sources = {section: _path(ctx, f"paper/sections/{section}.tex").read_text(encoding="utf-8")
+        # Review anchors use exact archived bytes; read_text() normalizes CRLF
+        # and otherwise sends a valid review/revision pair around an endless loop.
+        sources = {section: _path(ctx, f"paper/sections/{section}.tex").read_bytes().decode("utf-8")
                    for section in SECTIONS}
         try:
             semantic.validate_units(review["units"], sources, writer.claims)
@@ -1143,9 +1145,9 @@ class WritingStage:
             raise ValueError("revision changed code-owned numeric values")
         if meta["compiled"]["source_sha256"] != self._source_sha(ctx):
             raise ValueError("source changed during semantic revision; preserve human edits and recheck")
-        old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_text(encoding="utf-8")
+        old["paper/claims.jsonl"] = _path(ctx, "paper/claims.jsonl").read_bytes().decode("utf-8")
         new["paper/claims.jsonl"] = binding.claims_bytes(claims).decode()
-        old["paper/air_values.tex"] = _path(ctx, "paper/air_values.tex").read_text(encoding="utf-8")
+        old["paper/air_values.tex"] = _path(ctx, "paper/air_values.tex").read_bytes().decode("utf-8")
         new["paper/air_values.tex"] = binding.values_tex(claims).decode("utf-8")
         transaction = {
             "basis": basis,

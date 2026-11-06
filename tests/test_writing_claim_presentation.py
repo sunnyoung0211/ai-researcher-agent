@@ -225,6 +225,10 @@ def test_old_installed_invalid_claim_is_repaired_from_original_plan(tmp_path, mo
         old.setattr(stage.WritingStage, "_claim_basis", lambda *args: "old-binding-rules")
         old.setattr(binding, "latex_errors", lambda text: [])
         old.setattr(binding, "presentation_errors", lambda *args: [])
+        # The historical release predates both syntax guards. Disable the new
+        # normalizer only while constructing its already-installed bad claim;
+        # the recovery below must run with every current production check active.
+        old.setattr(stage.latex_syntax, "inspect", lambda text, **kwargs: stage.latex_syntax.Repair(text, [], []))
         old.setattr(SampleWritingLLM, "call", historical)
         q = until_question(p, e)
         assert "section-abstract" in q.text
@@ -232,6 +236,8 @@ def test_old_installed_invalid_claim_is_repaired_from_original_plan(tmp_path, mo
     journal = p.root / "paper/.writing/claim-plan-old-binding-rules-attempts.json"
     original_bytes = journal.read_bytes()
     old_claims = (p.root / "paper/claims.jsonl").read_bytes()
+    assert json.loads(original_bytes)["attempts"][-1]["status"] == "accepted"
+    assert b"reduced time" in old_claims and b"%" in old_claims
     seen = []
 
     def repair(self, request):
