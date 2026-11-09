@@ -108,7 +108,7 @@ def test_gateway_calls_context_skill_accounting_and_output_tree(writing):
     expected_alias = llm.resolve("writing.writer", PROMPT_ID, "strong", "strong")[0].alias
     for call in llm.backend.calls:
         assert call.role == "writing.writer" and call.alias == expected_alias
-        assert call.prompt_id == PROMPT_ID and call.prompt_version == 3 and call.schema_name == "SectionOutput"
+        assert call.prompt_id == PROMPT_ID and call.prompt_version == 4 and call.schema_name == "SectionOutput"
         assert writer.skill.instructions in call.messages[0]["content"]
         assert writer.skill.ref in call.messages[0]["content"]
     assert all(x.skill_ref == "latex-writing@0.3.0" and len(x.context_sha256) == 64 for x in result.sections)
@@ -481,12 +481,14 @@ def test_real_sample_fake_draft_compiles_without_evidence_machinery(writing):
 def test_compile_failure_is_returned_without_llm_repair(writing):
     p, bundle, _, _ = writing
     script = responses()
-    script[2]["latex"] = "\\section{Method}\nUnclosed math $x"
+    # Unclosed math is now rejected before compilation. An invalid table column
+    # keeps the fragment structurally valid and exercises the compiler boundary.
+    script[2]["latex"] = "\\section{Method}\n\\begin{tabular}{Q}Invalid column.\\end{tabular}"
     llm = fake_gateway(p, {PROMPT_ID: script})
     result = Writer(p.root, bundle, llm=llm).generate_draft(title="Compile failure test", compile_enabled=True)
     assert not result.compile_report.ok and result.compile_report.errors
     assert len(llm.backend.calls) == 8 and not (p.root / "paper/build/main.pdf").exists()
-    assert "$x" in (p.root / "paper/sections/method.tex").read_text(encoding="utf-8")
+    assert r"\begin{tabular}{Q}" in (p.root / "paper/sections/method.tex").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", ["ref", "pageref", "label"])
